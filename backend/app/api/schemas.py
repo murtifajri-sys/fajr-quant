@@ -239,6 +239,49 @@ class ScreenerRunOut(BaseModel):
     results: list[ScreenerResultRow]
 
 
+class IpoScreenerRowOut(BaseModel):
+    ticker: str
+    name: Optional[str] = None
+    board: Optional[str] = None
+    listing_date: date
+    calendar_age_days: int
+    trading_session_age: int
+    phase: str
+    status: str
+    setup_type: str
+    ipo_setup_score: float
+    last_price: Optional[float] = None
+    last_price_date: Optional[date] = None
+    avg_value_5: float
+    opening_range_high: Optional[float] = None
+    opening_range_low: Optional[float] = None
+    anchored_vwap: Optional[float] = None
+    base_high: Optional[float] = None
+    base_low: Optional[float] = None
+    base_width_pct: Optional[float] = None
+    volume_ratio: Optional[float] = None
+    broker_flow: dict
+    levels: dict
+    blockers: list[str]
+
+
+class IpoScreenerOut(BaseModel):
+    as_of_date: date
+    max_calendar_age_days: int
+    total: int
+    results: list[IpoScreenerRowOut]
+
+
+class IpoScreenerDetailOut(IpoScreenerRowOut):
+    recent_prices: list[dict]
+    watchlist_names: list[str] = Field(default_factory=list)
+
+
+class IpoScreenerPromptRequest(BaseModel):
+    candidates: list[dict]
+    max_candidates: int = Field(default=10, ge=1, le=10)
+
+
 class TradeCandidatePromptRequest(BaseModel):
     candidates: list[dict]
     max_candidates: int = Field(default=10, ge=1, le=10)

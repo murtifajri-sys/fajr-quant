@@ -51,20 +51,23 @@ Aturan utamanya:
 
 ## 3. Universe dan Fase IPO
 
-Universe awal adalah saham dengan usia maksimal `120` hari kalender atau
-maksimal `80` sesi perdagangan sejak listing.
+Universe awal adalah saham dengan usia maksimal `120` hari kalender sejak
+listing. Jumlah sesi perdagangan tidak dipakai untuk memperluas universe karena
+saham lama yang sering suspend bisa memiliki sesi sedikit dan salah terbaca
+sebagai IPO. Jumlah sesi hanya dipakai untuk menentukan fase dan status.
 
 | Fase | Sesi tersedia | Status maksimum | Fokus analisis |
 |---|---:|---|---|
 | `price_discovery` | 1-5 | `IPO Observasi` | range awal, likuiditas, ARA/ARB, distribusi |
-| `early_watch` | 6-20 | `IPO Watch` | broker flow, opening range, anchored VWAP |
+| `early_watch` | 6-20 | `IPO Early Entry` | akumulasi, opening range, anchored VWAP |
 | `base_forming` | 21-40 | `IPO Mendekati Entry` | base, contraction, dry-up volume, resistance |
-| `setup_ready` | 41-80 | `IPO Siap Entry` | breakout/retest/BOW dengan invalidasi |
-| `transition` | >80 sesi atau >120 hari | screener reguler | rule teknikal dan trade status reguler |
+| `setup_ready` | 41+ | `IPO Siap Entry` | breakout/retest/BOW dengan invalidasi |
+| `transition` | >120 hari kalender | screener reguler | rule teknikal dan trade status reguler |
 
-Pengecualian: fase `early_watch` dapat menjadi `IPO Mendekati Entry`, tetapi
-belum `IPO Siap Entry`, jika opening range sudah terbentuk dan datanya bersih.
-Ini mencegah sistem memberi entry agresif pada price discovery yang belum stabil.
+Fase `early_watch` dapat menjadi `IPO Early Entry` jika opening range sudah
+terbentuk, broker accumulation kuat, harga belum extended, dan level invalidasi
+jelas. Ukuran posisi tetap harus dianggap lebih agresif dibanding setup 21+
+sesi karena base belum matang.
 
 ## 4. Data dan Feature
 
@@ -158,6 +161,7 @@ bukan angka tersebar di frontend dan backend.
 | `IPO Data Belum Cukup` | Kurang dari 6 sesi atau coverage buruk |
 | `IPO Observasi` | Masih price discovery, belum ada struktur entry |
 | `IPO Watch - Akumulasi` | Flow menarik, tetapi base belum matang |
+| `IPO Early Entry` | Usia 6-20 sesi, flow kuat, dekat trigger/AVWAP, risiko agresif |
 | `IPO Base Forming` | Struktur mulai terbentuk dan level tunggu tersedia |
 | `IPO Mendekati Entry` | Harga dekat trigger/zona entry, menunggu konfirmasi |
 | `IPO Siap Entry` | Setup valid, tidak extended, flow dan volume mendukung |

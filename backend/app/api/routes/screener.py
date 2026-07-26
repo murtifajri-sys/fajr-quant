@@ -7,6 +7,9 @@ from app.api.schemas import (
     BrokerLabelBacktestOut,
     BrokerLabelWalkforwardOut,
     BrokerTickerDetailOut,
+    IpoScreenerDetailOut,
+    IpoScreenerOut,
+    IpoScreenerPromptRequest,
     ScreenerFilter,
     ScreenerResultRow,
     ScreenerRunOut,
@@ -21,6 +24,11 @@ from app.services.ai.trade_candidate_prompt import (
     TRADE_CANDIDATE_SYSTEM_PROMPT,
     build_trade_candidate_prompt,
 )
+from app.services.ai.ipo_screener_prompt import (
+    IPO_SCREENER_SYSTEM_PROMPT,
+    build_ipo_screener_prompt,
+)
+from app.services.ipo_screener import build_ipo_detail, build_ipo_screener
 from app.services.screener.runner import (
     DEFAULT_SCREENER_SNAPSHOT_NAME,
     build_broker_ticker_detail,
@@ -87,6 +95,53 @@ def trade_monitor(
             broker_period_days=broker_period_days,
         )
     ]
+
+
+@router.get("/ipo", response_model=IpoScreenerOut)
+def ipo_screener(
+    limit: int = Query(50, ge=1, le=200),
+    status: str | None = Query(None),
+    setup: str | None = Query(None),
+    only_actionable: bool = Query(False),
+    min_score: float | None = Query(None, ge=0, le=100),
+    db: Session = Depends(get_db),
+):
+    return IpoScreenerOut(
+        **build_ipo_screener(
+            db,
+            limit=limit,
+            status=status,
+            setup=setup,
+            only_actionable=only_actionable,
+            min_score=min_score,
+        )
+    )
+
+
+@router.post("/ipo/ai-analysis", response_model=TradeCandidateAnalysisOut)
+def ipo_ai_analysis(payload: IpoScreenerPromptRequest):
+    candidates = payload.candidates[: payload.max_candidates]
+    prompt = build_ipo_screener_prompt(candidates, max_candidates=payload.max_candidates)
+    provider = get_provider()
+    try:
+        result = provider.complete(IPO_SCREENER_SYSTEM_PROMPT, prompt)
+    except Exception as e:
+        log.error("ipo_screener_ai_error", error=str(e)[:300])
+        raise HTTPException(502, "IPO AI analysis failed")
+    used_provider = getattr(provider, "active_provider", provider) or provider
+    return TradeCandidateAnalysisOut(
+        content=result.get("content") or {},
+        provider=used_provider.name,
+        candidate_count=len(candidates),
+    )
+
+
+@router.get("/ipo/{ticker}", response_model=IpoScreenerDetailOut)
+def ipo_detail(ticker: str, db: Session = Depends(get_db)):
+    detail = build_ipo_detail(db, ticker)
+    if not detail:
+        raise HTTPException(404, "IPO detail not found")
+    return IpoScreenerDetailOut(**detail)
 
 
 @router.post("/trade-candidates-prompt", response_model=TradeCandidatePromptOut)

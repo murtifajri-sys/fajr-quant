@@ -8,6 +8,7 @@ const nav = [
   { href: "/", label: "Dashboard" },
   { href: "/screener", label: "Screener" },
   { href: "/ai-screener", label: "AI Screener" },
+  { href: "/ipo-screener", label: "IPO Screener" },
   { href: "/watchlist", label: "Watchlist" },
   { href: "/data", label: "Data" },
   { href: "/charts", label: "Charts" },
