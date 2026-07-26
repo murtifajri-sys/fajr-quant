@@ -1,0 +1,29 @@
+# Fajr Quant - Project Rules
+
+## Project overview
+Fajr Quant is a stock analysis platform for the Indonesian stock market (IDX).
+- Backend: Python 3.11 + FastAPI + SQLAlchemy + Celery
+- Frontend: Next.js (TypeScript) + Tailwind + Recharts
+- Database: MySQL / MariaDB
+- Data sources: Stockbit (Exodus) API (token-based) + yfinance (fallback)
+
+## Architecture rules
+- All Stockbit HTTP calls MUST go through `backend/app/clients/stockbit.py` (or `base.py`).
+  Never call the Exodus endpoints directly from services or routes.
+- Data persistence MUST use SQLAlchemy models in `backend/app/models/`.
+- Sensitive values (Stockbit token) MUST be encrypted at rest via `app/utils/encryption.py`.
+- Technical analysis modules live in `app/services/technical/` and are registered in its `REGISTRY`.
+- Bandarmology modules live in `app/services/bandarmology/` and are registered in its `REGISTRY`.
+- Scoring logic lives in `app/services/scoring/`. Weights and thresholds MUST be configurable, not hardcoded in routes.
+- Long-running work (data fetch, scoring, telegram digest) MUST run as Celery tasks in `app/workers/tasks.py`.
+
+## Documentation rule (IMPORTANT)
+Any change that affects: data flow, DB schema, Stockbit/yfinance endpoints, scoring
+weights/formulas, AI prompt, or Telegram behavior MUST be accompanied by an update
+to the relevant file in `docs/` AND an entry in `docs/CHANGELOG.md` in the same commit.
+
+## Style
+- Python: type hints where practical, functions documented with short docstrings.
+- No emojis in code or commit messages.
+- Keep API responses JSON-serializable (use pydantic schemas in `app/api/schemas.py`).
+- Frontend API base is `NEXT_PUBLIC_API_URL` (default `http://localhost:8000/api/v1`).
