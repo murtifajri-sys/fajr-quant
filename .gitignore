@@ -13,6 +13,7 @@ out/
 tsconfig.tsbuildinfo
 
 # DB / misc
+backups/
 *.sqlite3
 *.db
 *.log

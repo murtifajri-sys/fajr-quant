@@ -24,6 +24,83 @@ Kemudian:
 3. Isi DeepSeek key dan Telegram bot token di `backend/.env` bila diperlukan.
 4. Buka dashboard dan tekan **Run Daily Pipeline**.
 
+## Deploy server baru dengan data yang sama
+
+Repo menyimpan schema lewat Alembic migration, bukan isi database production.
+Untuk server baru yang harus punya data sama persis, pindahkan dump MariaDB dari
+server lama.
+
+### 1. Backup dari mesin lama
+
+Pastikan stack lama masih berjalan, lalu jalankan:
+
+```bash
+./scripts/db-backup.sh
+```
+
+Output default masuk ke folder lokal `backups/`, misalnya:
+
+```text
+backups/fajr_quant_20260726_223000.sql.gz
+```
+
+Folder `backups/` di-ignore oleh Git. Jangan commit dump database karena bisa
+berisi token terenkripsi, task history, dan data runtime.
+
+### 2. Siapkan server baru
+
+```bash
+git clone git@github.com:murtifajri-sys/fajr-quant.git
+cd fajr-quant
+cp backend/.env.example backend/.env
+```
+
+Edit `backend/.env`:
+
+- isi `ENCRYPTION_KEY` dengan key yang sama dari mesin lama jika ingin token
+  terenkripsi lama tetap bisa dibaca;
+- isi `AI_API_KEY`, `TELEGRAM_BOT_TOKEN`, dan konfigurasi lain sesuai server;
+- pastikan `DATABASE_URL` tetap mengarah ke service Docker `db` jika memakai
+  `docker-compose.yml` default.
+
+Start database dan service:
+
+```bash
+docker compose up --build -d
+```
+
+Command backend sudah menjalankan `alembic upgrade head` saat start. Untuk restore
+dump penuh, migration tidak wajib dijalankan manual karena dump membawa isi tabel.
+
+### 3. Restore dump ke server baru
+
+Pindahkan file dump ke server baru, misalnya ke folder `backups/`, lalu:
+
+```bash
+./scripts/db-restore.sh backups/fajr_quant_20260726_223000.sql.gz
+```
+
+Setelah restore:
+
+```bash
+docker compose restart backend worker beat frontend
+```
+
+Buka:
+
+- Frontend: `http://<server-ip>:3000`
+- API: `http://<server-ip>:8000/api/v1`
+- Flower: `http://<server-ip>:5555`
+
+### Catatan restore
+
+- Restore akan menimpa isi tabel sesuai dump. Jalankan di server baru atau DB yang
+  memang siap diganti.
+- Jika token Stockbit/AI tidak terbaca setelah restore, biasanya `ENCRYPTION_KEY`
+  di `backend/.env` tidak sama dengan mesin lama.
+- Jika hanya butuh schema kosong, cukup jalankan `docker compose up --build -d`
+  dan seed stocks; tidak perlu restore dump.
+
 ## Daily pipeline
 
 Manual:
