@@ -32,6 +32,16 @@
 
 Project context and rules for AI assistants working on Fajr-Quant.
 
+## Git Hygiene
+
+Setiap selesai membuat perubahan file yang relevan untuk project, agent MUST:
+- cek status Git;
+- commit perubahan dengan pesan yang jelas;
+- push ke remote `origin/main`;
+- laporkan commit hash terbaru ke user.
+
+Jika push gagal karena auth/network, laporkan blocker dan status commit lokal.
+
 ## Approval Prefix Rules
 
 Saat meminta approval runtime, agent MUST mengusulkan `prefix_rule` yang umum,

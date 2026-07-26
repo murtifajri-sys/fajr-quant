@@ -6,6 +6,8 @@ Obsidian Knowledge Brain v4.0 hub for the Fajr-Quant project.
 - Record `[ERROR:]` stubs immediately after fixing any bug.
 - Run `wrap up` / `收尾` at session end to capture decisions and errors.
 - Run `health check` / `健康检查` weekly.
+- After project file changes, commit and push to `origin/main`; report the latest
+  commit hash. If push fails, report the local commit and blocker.
 
 ## Project Index
 | Project | File | Status |
