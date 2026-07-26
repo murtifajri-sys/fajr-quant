@@ -3,11 +3,92 @@
 ## Prasyarat
 
 - Docker Engine + Docker Compose
+- Git
+- SSH key yang punya akses ke repository GitHub jika repo private
 - Port 3000, 3306, 5555, 6379, dan 8000 tersedia
 
 Mesin pengembangan saat verifikasi 2026-07-13 belum memiliki Docker maupun
 Node.js. Backend dan integrasi data sudah diuji melalui Python dan database
 SQLite sementara, tetapi deployment lengkap tetap memerlukan prasyarat di atas.
+
+## Install server baru Ubuntu
+
+Langkah minimum untuk server Ubuntu kosong:
+
+```bash
+sudo apt update
+sudo apt install -y git ca-certificates curl gnupg
+```
+
+Install Docker Engine dan Docker Compose plugin dari repository resmi Docker:
+
+```bash
+sudo install -m 0755 -d /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
+  | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+sudo chmod a+r /etc/apt/keyrings/docker.gpg
+
+echo \
+  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
+  $(. /etc/os-release && echo "$VERSION_CODENAME") stable" \
+  | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+
+sudo apt update
+sudo apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+```
+
+Izinkan user menjalankan Docker tanpa `sudo`:
+
+```bash
+sudo usermod -aG docker "$USER"
+newgrp docker
+```
+
+Verifikasi:
+
+```bash
+docker --version
+docker compose version
+```
+
+Siapkan SSH key untuk GitHub:
+
+```bash
+ssh-keygen -t ed25519 -C "server-fajr-quant"
+cat ~/.ssh/id_ed25519.pub
+```
+
+Tambahkan public key ke GitHub, lalu test:
+
+```bash
+ssh -T git@github.com
+```
+
+Clone dan siapkan environment:
+
+```bash
+git clone git@github.com:murtifajri-sys/fajr-quant.git
+cd fajr-quant
+cp backend/.env.example backend/.env
+```
+
+Edit `backend/.env` minimal:
+
+- `ENCRYPTION_KEY`: wajib; samakan dengan mesin lama jika restore DB lama;
+- `AI_API_KEY`: diperlukan untuk AI recommendation/AI screener;
+- `TELEGRAM_BOT_TOKEN`: diperlukan jika memakai notifikasi Telegram.
+
+Start aplikasi:
+
+```bash
+docker compose up --build -d
+```
+
+Akses default:
+
+- Frontend: `http://<server-ip>:3000`
+- API: `http://<server-ip>:8000/api/v1`
+- Flower: `http://<server-ip>:5555`
 
 ## First run
 
