@@ -22,6 +22,7 @@ Add `[DECISION:]` and `[ERROR:]` lines here, or let the Agent extract them at se
 [ERROR: type=frontend-build-cache-permission | resolution=validate Next build from /tmp copy excluding repo-owned .next-app cache | project: fajr-quant]
 [ERROR: type=rsync-group-preserve | resolution=copy temp frontend build with rsync -rlt instead of archive mode | project: fajr-quant]
 [ERROR: type=validation-command-mixed-language | resolution=run py_compile only on Python files and validate TSX with tsc/eslint | project: fajr-quant]
+[ERROR: type=git-ssh-host-key-missing | resolution=add github.com to known_hosts with ssh-keyscan then retry git push | project: fajr-quant]
 [ERROR: type=tool-orchestration-syntax | resolution=split combined validation into simple exec calls | project: fajr-quant]
 [ERROR: type=git-metadata-unavailable | resolution=validate new markdown directly because mounted .git metadata is inaccessible | project: fajr-quant]
 [ERROR: type=python-command-missing | resolution=use python3 for local backend py_compile validation | project: fajr-quant]
