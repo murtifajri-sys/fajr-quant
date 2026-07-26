@@ -19,6 +19,7 @@ def _round(value: Any, digits: int = 2) -> Any:
 
 def _compact_candidate(item: dict[str, Any]) -> dict[str, Any]:
     flow = item.get("broker_flow") or {}
+    holder = item.get("holder_risk") or {}
     levels = item.get("levels") or {}
     return {
         "ticker": item.get("ticker"),
@@ -58,6 +59,14 @@ def _compact_candidate(item: dict[str, Any]) -> dict[str, Any]:
             "concentration_ratio": _round(flow.get("concentration_ratio"), 3),
             "distribution_reversal": flow.get("distribution_reversal"),
         },
+        "holder_risk": {
+            "holder_risk_label": holder.get("holder_risk_label"),
+            "holder_count": holder.get("holder_count"),
+            "top_holder_name": holder.get("top_holder_name"),
+            "top_holder_pct": _round(holder.get("top_holder_pct"), 2),
+            "total_major_holder_pct": _round(holder.get("total_major_holder_pct"), 2),
+            "free_float_estimate_pct": _round(holder.get("free_float_estimate_pct"), 2),
+        },
         "blockers": item.get("blockers") or [],
     }
 
@@ -72,9 +81,10 @@ def build_ipo_screener_prompt(candidates: list[dict[str, Any]], max_candidates: 
         "1. Prioritaskan status IPO Siap Entry, IPO Early Entry, lalu IPO Mendekati Entry.\n"
         "2. IPO Early Entry boleh dipilih walau sesi 6-20, tetapi sebutkan bahwa risikonya agresif dan harus disiplin invalidasi.\n"
         "3. Jangan rekomendasikan entry jika blocker berisi broker_flow_not_positive, distribution_reversal, liquidity_below_threshold, atau price_extended_from_trigger.\n"
-        "4. Jika status IPO Tunggu Retest, keputusan harus wait_pullback/retest, bukan entry_now.\n"
-        "5. Gunakan levels sebagai sumber tunggal trigger, zona BOW, dan invalidasi. Jangan membuat level baru.\n"
-        "6. Jelaskan alasan status dengan bahasa manusia: akumulasi, jarak harga ke trigger/AVWAP, volume, dan risiko IPO.\n\n"
+        "4. Jika holder_risk_label supply_overhang atau fragmented_holder, turunkan prioritas karena barang lebih mungkin tersebar/tersedia untuk retail.\n"
+        "5. Jika status IPO Tunggu Retest, keputusan harus wait_pullback/retest, bukan entry_now.\n"
+        "6. Gunakan levels sebagai sumber tunggal trigger, zona BOW, dan invalidasi. Jangan membuat level baru.\n"
+        "7. Jelaskan alasan status dengan bahasa manusia: akumulasi, jarak harga ke trigger/AVWAP, volume, holder risk, dan risiko IPO.\n\n"
         "Format output JSON:\n"
         "{\n"
         '  "top_candidates": [\n'

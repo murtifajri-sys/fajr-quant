@@ -597,6 +597,37 @@ def run_broker_flow_backfill(
         db.close()
 
 
+@celery_app.task(bind=True, name="run_ipo_majorholder_refresh")
+def run_ipo_majorholder_refresh(self, limit: int = 50, tickers: list[str] | None = None):
+    """Refresh major-holder cache for IPO/new-listing tickers only."""
+    from app.services.ipo_major_holder import refresh_ipo_major_holders
+
+    db = _db()
+    run = _start_run(db, self.request.id or str(uuid4()), "ipo_majorholder_refresh")
+    try:
+        selected_tickers = sorted({str(t).upper() for t in (tickers or []) if t}) if tickers else None
+        total = len(selected_tickers) if selected_tickers else 1
+        _progress(db, run, "refreshing_ipo_majorholders", 0, total, 0, 0)
+        result = refresh_ipo_major_holders(db, limit=limit, tickers=selected_tickers)
+        _progress(
+            db,
+            run,
+            "completed_with_ticker_errors" if result.get("failed") else "completed",
+            result.get("processed") or 0,
+            result.get("processed") or 0,
+            result.get("succeeded") or 0,
+            result.get("failed") or 0,
+        )
+        _finish(db, run, result=_json_safe(result))
+        return _json_safe(result)
+    except Exception as exc:
+        db.rollback()
+        _finish(db, run, error=str(exc))
+        raise
+    finally:
+        db.close()
+
+
 @celery_app.task(bind=True, name="run_recompute_signals")
 def run_recompute_signals(self):
     """Recompute technical + bandarmology + scores for all tickers (no data download)."""
@@ -727,17 +758,28 @@ def run_daily_pipeline(self):
                 stage="waiting_for_worker",
             )
         )
+        holder_task_id = str(uuid4())
+        db.add(
+            PipelineRun(
+                task_id=holder_task_id,
+                task_name="ipo_majorholder_refresh",
+                status="QUEUED",
+                stage="waiting_for_worker",
+            )
+        )
         db.commit()
         run_full_data_load.apply_async(
             args=[None, True],
             task_id=data_task_id,
-            link=run_recommendations_batch.si().set(task_id=rec_task_id)
-                 .set(link=run_daily_screener.si().set(link=send_daily_digest.si())),
+            link=run_ipo_majorholder_refresh.si().set(task_id=holder_task_id)
+                 .set(link=run_recommendations_batch.si().set(task_id=rec_task_id)
+                 .set(link=run_daily_screener.si().set(link=send_daily_digest.si()))),
         )
         result = {
             "ok": True,
             "regime": regime.get("regime"),
             "data_load_task_id": data_task_id,
+            "ipo_majorholder_task_id": holder_task_id,
             "recommendations_task_id": rec_task_id,
         }
         _progress(db, run, "data_load_queued", 1, 1, 1, 0)

@@ -3,6 +3,7 @@ from app.models.bandar import BandarmologySignal
 from app.models.broker_flow import BrokerFlow
 from app.models.foreign_flow import ForeignFlow
 from app.models.indicator import TechnicalIndicator
+from app.models.ipo_holder import IpoMajorHolderSnapshot
 from app.models.market_regime import MarketRegime
 from app.models.pipeline_run import PipelineRun
 from app.models.price import DailyPrice
@@ -18,6 +19,7 @@ __all__ = [
     "BrokerFlow",
     "DailyPrice",
     "ForeignFlow",
+    "IpoMajorHolderSnapshot",
     "MarketRegime",
     "PipelineRun",
     "Recommendation",

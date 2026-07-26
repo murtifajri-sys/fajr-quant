@@ -92,6 +92,8 @@ Feature khusus IPO:
 - `broker_net_5/10/20`: net accumulation sesuai jumlah sesi tersedia;
 - `broker_consistency`: proporsi sesi net buy positif;
 - `broker_concentration`: dominasi broker pembeli utama;
+- `majorholder_risk`: ringkasan pemegang saham besar dari cache Stockbit
+  `majorholder`, dipakai untuk membaca supply/free-float risk;
 - `distribution_reversal`: flow 3-5 sesi terakhir berbalik negatif;
 - `extension_from_avwap` dan `extension_from_base`: guardrail anti-kejar harga;
 - jumlah ARA/ARB atau candle ekstrem sebagai penalti risiko.
@@ -99,6 +101,11 @@ Feature khusus IPO:
 Broker coverage dihitung terhadap sesi perdagangan yang tersedia sejak listing,
 bukan dibagi target 30/120 hari. Dengan demikian saham baru tidak otomatis
 dianggap incomplete hanya karena belum lama tercatat.
+
+Data `majorholder` tidak diambil live saat membuka menu. Pipeline harian
+menjalankan refresh cache hanya untuk universe IPO/new listing maksimal 120 hari,
+setelah `daily data load` dan sebelum AI/screener. Jika sebagian ticker gagal,
+hasilnya dicatat per ticker dan tidak menggagalkan screener utama.
 
 ## 5. Hard Gate
 
@@ -110,6 +117,8 @@ terjadi:
 - tidak ada transaksi pada lebih dari 30% sesi yang seharusnya aktif;
 - broker coverage terhadap sesi tersedia di bawah 80%;
 - flow terbaru menunjukkan distribusi kuat atau reversal negatif;
+- majorholder menunjukkan `supply_overhang` atau `fragmented_holder`; status
+  maksimum turun menjadi watch/risk sampai broker flow membuktikan demand cukup;
 - harga lebih dari `2 ATR` atau 12% di atas base breakout/anchored VWAP;
 - belum ada level invalidasi yang dapat dihitung;
 - base terlalu lebar, struktur terus membuat lower low, atau volatilitas belum

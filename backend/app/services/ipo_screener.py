@@ -12,6 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models.broker_flow import BrokerFlow
+from app.models.ipo_holder import IpoMajorHolderSnapshot
 from app.models.price import DailyPrice
 from app.models.setting import WatchlistItem
 from app.models.stock import Stock
@@ -213,6 +214,27 @@ def _setup_from_levels(
     return "base_forming", "IPO Base Forming", levels, blockers + ["waiting_setup_confirmation"]
 
 
+def _holder_summary(db: Session, ticker: str) -> dict[str, Any] | None:
+    row = db.execute(
+        select(IpoMajorHolderSnapshot)
+        .where(IpoMajorHolderSnapshot.ticker == ticker)
+        .order_by(IpoMajorHolderSnapshot.fetched_at.desc())
+        .limit(1)
+    ).scalar_one_or_none()
+    if not row:
+        return None
+    return {
+        "as_of_date": row.as_of_date,
+        "fetched_at": row.fetched_at,
+        "holder_count": row.holder_count,
+        "top_holder_name": row.top_holder_name,
+        "top_holder_pct": row.top_holder_pct,
+        "total_major_holder_pct": row.total_major_holder_pct,
+        "free_float_estimate_pct": row.free_float_estimate_pct,
+        "holder_risk_label": row.holder_risk_label,
+    }
+
+
 def build_ipo_candidate(
     db: Session,
     stock: Stock,
@@ -279,6 +301,12 @@ def build_ipo_candidate(
         blockers.append("special_monitoring_board")
         if status in {"IPO Early Entry", "IPO Mendekati Entry", "IPO Siap Entry"}:
             status = "IPO Risiko Tinggi"
+    holder = _holder_summary(db, stock.ticker)
+    holder_label = (holder or {}).get("holder_risk_label")
+    if holder_label in {"supply_overhang", "fragmented_holder"}:
+        blockers.append(holder_label)
+        if status in {"IPO Early Entry", "IPO Mendekati Entry", "IPO Siap Entry"}:
+            status = "IPO Watch - Akumulasi"
 
     accumulation_score = min(100.0, max(0.0, (flow["top_broker_positive_ratio"] * 45.0) + (flow["coverage_ratio"] * 25.0) + (20.0 if flow["recent_5_net"] > 0 else 0.0)))
     structure_score = 30.0
@@ -317,6 +345,7 @@ def build_ipo_candidate(
         "base_width_pct": _round(base_width_pct),
         "volume_ratio": _round(volume_ratio),
         "broker_flow": flow,
+        "holder_risk": holder or {"holder_risk_label": "unknown_majorholder"},
         "levels": levels,
         "blockers": sorted(set(blockers)),
     }

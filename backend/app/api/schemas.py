@@ -261,6 +261,7 @@ class IpoScreenerRowOut(BaseModel):
     base_width_pct: Optional[float] = None
     volume_ratio: Optional[float] = None
     broker_flow: dict
+    holder_risk: Optional[dict] = None
     levels: dict
     blockers: list[str]
 

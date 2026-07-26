@@ -16,6 +16,7 @@ from app.workers.tasks import (
     run_broker_flow_backfill,
     run_daily_pipeline,
     run_full_data_load,
+    run_ipo_majorholder_refresh,
     run_recommendations_batch,
     run_recompute_signals,
     run_scoring_for_ticker,
@@ -77,6 +78,14 @@ def trigger_broker_flow_backfill(
     db: Session = Depends(get_db),
 ):
     return _enqueue(db, run_broker_flow_backfill, "broker_flow_backfill", [limit, period_days, universe])
+
+
+@router.post("/ipo-majorholder-refresh", response_model=TaskOut)
+def trigger_ipo_majorholder_refresh(
+    limit: int = Query(50, ge=1, le=200),
+    db: Session = Depends(get_db),
+):
+    return _enqueue(db, run_ipo_majorholder_refresh, "ipo_majorholder_refresh", [limit])
 
 
 @router.get("/broker-flow-backfill/coverage", response_model=BrokerFlowCoverageOut)

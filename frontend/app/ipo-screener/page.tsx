@@ -196,6 +196,7 @@ export default function IpoScreenerPage() {
               <th className="px-3 py-2">Trigger</th>
               <th className="px-3 py-2">AVWAP</th>
               <th className="px-3 py-2">Flow</th>
+              <th className="px-3 py-2">Holder</th>
               <th className="px-3 py-2">Value 5D</th>
               <th className="px-3 py-2">Blocker</th>
               <th className="px-3 py-2">Action</th>
@@ -203,7 +204,7 @@ export default function IpoScreenerPage() {
           </thead>
           <tbody>
             {rows.length === 0 ? (
-              <tr><td colSpan={12} className="px-3 py-8 text-center text-slate-500">No IPO candidate found</td></tr>
+              <tr><td colSpan={13} className="px-3 py-8 text-center text-slate-500">No IPO candidate found</td></tr>
             ) : rows.map((row) => (
               <tr key={row.ticker} className="border-t border-slate-800 hover:bg-slate-900/40">
                 <td className="px-3 py-2"><TickerLink ticker={row.ticker} /></td>
@@ -216,6 +217,12 @@ export default function IpoScreenerPage() {
                 <td className="px-3 py-2 font-mono text-xs">{fmt(row.anchored_vwap, 0)}</td>
                 <td className="px-3 py-2 font-mono text-xs">
                   {row.broker_flow?.top_broker || "-"} {fmtMoney(row.broker_flow?.recent_5_net)}
+                </td>
+                <td className="px-3 py-2 font-mono text-xs">
+                  {row.holder_risk?.holder_risk_label || "unknown_majorholder"}
+                  {row.holder_risk?.free_float_estimate_pct !== undefined && row.holder_risk?.free_float_estimate_pct !== null
+                    ? ` / FF ${fmt(row.holder_risk.free_float_estimate_pct, 1)}%`
+                    : ""}
                 </td>
                 <td className="px-3 py-2 font-mono text-xs">{fmtMoney(row.avg_value_5)}</td>
                 <td className="max-w-[260px] truncate px-3 py-2 text-xs text-slate-400" title={(row.blockers || []).join(", ")}>
