@@ -380,9 +380,18 @@ export default function ScreenerPage() {
     setPromptMsg("");
     try {
       const candidates = candidatePayload();
-      const response = await api.post("/screener/trade-candidates-prompt", { candidates, max_candidates: 10 });
-      setAiPrompt(response.data.prompt || "");
-      setPromptMsg(`Prompt dibuat untuk ${response.data.candidate_count || candidates.length} kandidat.`);
+      const response = await fetch("/api/screener/trade-candidates-prompt", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        cache: "no-store",
+        body: JSON.stringify({ candidates, max_candidates: 10 }),
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload?.detail || payload?.message || "Failed to build AI prompt.");
+      }
+      setAiPrompt(payload.prompt || "");
+      setPromptMsg(`Prompt dibuat untuk ${payload.candidate_count || candidates.length} kandidat.`);
     } catch (e: any) {
       setPromptErr(e.response?.data?.detail || e.message || "Failed to build AI prompt.");
     } finally {
@@ -397,10 +406,19 @@ export default function ScreenerPage() {
     setAiAnalysis(null);
     try {
       const candidates = candidatePayload();
-      const response = await api.post("/screener/trade-candidates-analysis", { candidates, max_candidates: 10 });
-      setAiAnalysis(response.data.content || {});
-      setAnalysisProvider(response.data.provider || "");
-      setPromptMsg(`AI selesai menganalisis ${response.data.candidate_count || candidates.length} kandidat.`);
+      const response = await fetch("/api/screener/trade-candidates-analysis", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        cache: "no-store",
+        body: JSON.stringify({ candidates, max_candidates: 10 }),
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload?.detail || payload?.message || "AI analysis failed.");
+      }
+      setAiAnalysis(payload.content || {});
+      setAnalysisProvider(payload.provider || "");
+      setPromptMsg(`AI selesai menganalisis ${payload.candidate_count || candidates.length} kandidat.`);
     } catch (e: any) {
       setPromptErr(e.response?.data?.detail || e.message || "AI analysis failed.");
     } finally {
