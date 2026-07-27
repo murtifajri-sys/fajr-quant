@@ -82,3 +82,26 @@ def test_trade_setup_does_not_label_far_above_value_zone_as_bow():
     if setup["setup_type"] == "wait_value_area":
         assert "price_extended" in setup["blockers"]
         assert "anti_chasing" in setup["warnings"]
+
+
+def test_trade_setup_arms_breakout_trigger_before_confirmation():
+    closes = [150 + (idx * 2) for idx in range(24)] + [204]
+    rows = _rows(date(2026, 6, 1), closes)
+    rows[-2]["high"] = 234
+    rows[-2]["close"] = 204
+    rows[-1]["open"] = 208
+    rows[-1]["high"] = 224
+    rows[-1]["low"] = 195
+    rows[-1]["close"] = 204
+
+    setup = build_trade_setup(
+        rows,
+        _broker(flow_quality_score=28, flow_quality_label="retail_like_accumulation"),
+        _entry(score=74, phase="Tunggu Konfirmasi"),
+    )
+
+    assert setup["setup_type"] == "wait_breakout"
+    assert setup["setup_state"] == "armed"
+    assert setup["trigger_price"] == 234
+    assert "waiting_breakout_trigger" in setup["blockers"]
+    assert "flow_quality_bad" in setup["blockers"]

@@ -4,7 +4,7 @@ import { usePathname } from "next/navigation";
 import { api } from "@/lib/api";
 import { DataTable } from "@/components/DataTable";
 import { TickerLink } from "@/components/TickerLink";
-import { normalizeTradeSetup, setupMatchesFilter, setupTargetText, setupTone, type SetupFilter } from "@/lib/tradeSetup";
+import { normalizeTradeSetup, setupMatchesFilter, setupReasonText, setupTargetText, setupTone, type SetupFilter } from "@/lib/tradeSetup";
 import { evaluateTradeStatus } from "@/lib/tradeStatus";
 
 const METHODS = ["trend_structure","price_action","volume_breakout","harmonic","relative_strength","candlestick","elliott_wave"];
@@ -793,7 +793,7 @@ export default function ScreenerPage() {
                           <div className="space-y-1">
                             <span className={`inline-flex rounded border px-2 py-0.5 text-xs ${setupTone(setup)}`}>{setup.label || "-"}</span>
                             {(setup.blockers[0] || setup.confirmations[0]) && (
-                              <div className="text-[11px] text-slate-500">{setup.blockers[0] || setup.confirmations[0]}</div>
+                              <div className="text-[11px] text-slate-500">{setupReasonText(setup.blockers[0] || setup.confirmations[0])}</div>
                             )}
                           </div>
                         )}

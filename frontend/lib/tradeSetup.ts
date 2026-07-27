@@ -28,6 +28,20 @@ const EMPTY_SETUP: TradeSetup = {
   warnings: [],
 };
 
+const SETUP_REASONS: Record<string, string> = {
+  anti_chasing: "Anti-chasing",
+  broker_gate_not_clear: "Gate broker belum bersih",
+  data_setup_belum_lengkap: "Data setup belum lengkap",
+  flow_quality_bad: "Flow quality belum bersih",
+  no_clear_trigger_or_value_zone: "Belum ada trigger jelas",
+  price_extended: "Harga sudah extended",
+  pullback_volume_not_dry: "Volume pullback belum kering",
+  trigger_far: "Trigger masih jauh",
+  waiting_breakout_confirmation: "Tunggu breakout valid",
+  waiting_breakout_trigger: "Trigger belum ditembus",
+  waiting_price_in_zone: "Tunggu harga masuk zona",
+};
+
 function asNumber(value: unknown): number | null {
   if (value === null || value === undefined || value === "") return null;
   const numeric = Number(value);
@@ -75,6 +89,11 @@ export function setupTargetText(setup: TradeSetup) {
     return `${setup.zone_low.toFixed(0)}-${setup.zone_high.toFixed(0)}`;
   }
   return "-";
+}
+
+export function setupReasonText(reason?: string | null) {
+  if (!reason) return "";
+  return SETUP_REASONS[reason] || reason;
 }
 
 export function setupTone(setup: TradeSetup) {

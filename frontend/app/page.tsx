@@ -3,7 +3,7 @@ import { PipelineActions } from "@/components/PipelineActions";
 import { PipelineTable } from "@/components/PipelineTable";
 import { TickerLink } from "@/components/TickerLink";
 import { TokenWarning } from "@/components/TokenWarning";
-import { normalizeTradeSetup, setupTargetText } from "@/lib/tradeSetup";
+import { normalizeTradeSetup, setupReasonText, setupTargetText } from "@/lib/tradeSetup";
 
 export const dynamic = "force-dynamic";
 
@@ -161,7 +161,7 @@ export default async function Dashboard() {
                     </td>
                     <td className={`text-center ${setupClass(setup.setup_type)}`}>
                       <div>{setup.label || "-"}</div>
-                      <div className="text-[11px] text-slate-500">{setup.blockers?.[0] || setup.confirmations?.[0] || ""}</div>
+                      <div className="text-[11px] text-slate-500">{setupReasonText(setup.blockers?.[0] || setup.confirmations?.[0])}</div>
                     </td>
                     <td className="text-center font-mono text-slate-300">{setupTargetText(setup)}</td>
                     <td className="text-center font-mono text-slate-300">{setup.distance_pct !== null && setup.distance_pct !== undefined ? fmtPct(setup.distance_pct, 2) : "-"}</td>

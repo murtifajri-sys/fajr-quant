@@ -33,6 +33,13 @@ def _within_pct_or_atr(distance_pct: float | None, atr_value: float, last_price:
     return abs(distance_pct) <= max(atr_threshold, pct_threshold)
 
 
+def _within_trigger_range(distance_pct: float | None, atr_value: float, last_price: float) -> bool:
+    if distance_pct is None or distance_pct < 0:
+        return False
+    atr_threshold = (atr_value / last_price) * 100.0 * 2.5
+    return distance_pct <= max(atr_threshold, 20.0)
+
+
 def _price(value: float | None) -> float | None:
     if value is None:
         return None
@@ -159,6 +166,31 @@ def _trade_status_code(broker: dict[str, Any] | None, entry: dict[str, Any] | No
     return "hold"
 
 
+def _watch_setup_blockers(broker: dict[str, Any] | None, entry: dict[str, Any] | None) -> list[str] | None:
+    broker = broker or {}
+    entry = entry or {}
+    conviction = _num(broker.get("broker_conviction_score"))
+    entry_score = _num(entry.get("score"))
+    if conviction is None or entry_score is None:
+        return None
+    if broker.get("status") in {"no_accumulation", "stale", "reversal_risk", "insufficient_data"}:
+        return None
+    if broker.get("broker_conviction_label") not in {"accumulation", "big_accumulation", "aggressive_accumulation"}:
+        return None
+    if (_num(broker.get("recent_5_session_net")) or 0) <= 0:
+        return None
+    if broker.get("retail_distribution_risk"):
+        return None
+    if str(entry.get("phase") or "") in {"Siap Jual", "Exit"}:
+        return None
+    if conviction < 55 or entry_score < 50:
+        return None
+    blockers = ["broker_gate_not_clear"]
+    if broker.get("flow_quality_label") == "retail_like_accumulation":
+        blockers.append("flow_quality_bad")
+    return blockers
+
+
 def _base_payload(
     *,
     setup_type: str,
@@ -209,6 +241,7 @@ def build_trade_setup(
     last_price = _num(last.get("close"))
     as_of_date = last.get("date")
     status_code = trade_status_code or _trade_status_code(broker, entry_readiness)
+    gate_blockers: list[str] = []
 
     if len(rows) < 25 or last_price is None:
         return _base_payload(
@@ -219,15 +252,28 @@ def build_trade_setup(
             blockers=["data_setup_belum_lengkap"],
             as_of_date=as_of_date,
         )
-    if status_code in {"hold", "unavailable"}:
+    if status_code == "unavailable":
         return _base_payload(
             setup_type="no_setup",
             setup_state="blocked",
             label="Hold",
             last_price=last_price,
-            blockers=["broker_gate_not_clear" if status_code == "hold" else "data_setup_belum_lengkap"],
+            blockers=["data_setup_belum_lengkap"],
             as_of_date=as_of_date,
         )
+    if status_code == "hold":
+        watch_blockers = _watch_setup_blockers(broker, entry_readiness)
+        if watch_blockers:
+            gate_blockers = watch_blockers
+        else:
+            return _base_payload(
+                setup_type="no_setup",
+                setup_state="blocked",
+                label="Hold",
+                last_price=last_price,
+                blockers=["broker_gate_not_clear"],
+                as_of_date=as_of_date,
+            )
 
     atr = _atr(rows)
     closes = [_num(row.get("close")) or 0.0 for row in rows]
@@ -284,7 +330,26 @@ def build_trade_setup(
                 risk_reward=(reward / risk) if risk > 0 else None,
                 confirmations=["close_above_trigger", "volume_1_2x_ma20", "broker_flow_positive"],
                 confluences=["near_resistance", "broker_flow_positive"],
-                blockers=["waiting_breakout_confirmation"],
+                blockers=[*gate_blockers, "waiting_breakout_confirmation"],
+                as_of_date=as_of_date,
+            )
+        if _within_trigger_range(distance_to_resistance, atr_value, last_price):
+            invalidation = support_price or (last_price - atr_value)
+            reward = (resistance_price - last_price)
+            risk = max(last_price - invalidation, atr_value * 0.5)
+            return _base_payload(
+                setup_type="wait_breakout",
+                setup_state="armed",
+                label=f"Trigger Breakout > {round(resistance_price)}",
+                last_price=last_price,
+                trigger_price=resistance_price,
+                invalidation_price=invalidation,
+                distance_pct=distance_to_resistance,
+                risk_reward=(reward / risk) if risk > 0 else None,
+                confirmations=["close_above_trigger", "volume_1_2x_ma20", "broker_flow_positive"],
+                confluences=["breakout_trigger", "broker_flow_positive"],
+                blockers=[*gate_blockers, "waiting_breakout_trigger"],
+                warnings=["trigger_far"] if (distance_to_resistance or 0) > 8.0 else [],
                 as_of_date=as_of_date,
             )
 
@@ -324,7 +389,7 @@ def build_trade_setup(
             distance_pct=distance_to_bow,
             confirmations=bow_confirmations,
             confluences=[*dict.fromkeys(confluences)],
-            blockers=[] if bow_confirmed else ["waiting_price_in_zone"],
+            blockers=gate_blockers if bow_confirmed else [*gate_blockers, "waiting_price_in_zone"],
             warnings=[] if dry_pullback else ["pullback_volume_not_dry"],
             as_of_date=as_of_date,
         )
@@ -340,7 +405,7 @@ def build_trade_setup(
             distance_pct=distance_to_bow,
             confirmations=["structure_holds", "broker_flow_positive"],
             confluences=[*dict.fromkeys([*confluences, "anti_chasing"])],
-            blockers=["price_extended"],
+            blockers=[*gate_blockers, "price_extended"],
             warnings=["anti_chasing"],
             as_of_date=as_of_date,
         )
@@ -359,7 +424,7 @@ def build_trade_setup(
             distance_pct=_pct_distance(last_price, zone_high),
             confirmations=["structure_holds", "broker_flow_positive"],
             confluences=["ema20", "anti_chasing"],
-            blockers=["price_extended"],
+            blockers=[*gate_blockers, "price_extended"],
             warnings=["anti_chasing"],
             as_of_date=as_of_date,
         )
@@ -370,6 +435,6 @@ def build_trade_setup(
         label="Hold",
         last_price=last_price,
         invalidation_price=support_price,
-        blockers=["no_clear_trigger_or_value_zone"],
+        blockers=[*gate_blockers, "no_clear_trigger_or_value_zone"],
         as_of_date=as_of_date,
     )
