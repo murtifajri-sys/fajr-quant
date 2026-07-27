@@ -26,6 +26,13 @@ def _pct_distance(last_price: float | None, target: float | None) -> float | Non
     return round(((target - last_price) / last_price) * 100.0, 2)
 
 
+def _within_pct_or_atr(distance_pct: float | None, atr_value: float, last_price: float, pct_threshold: float = 8.0) -> bool:
+    if distance_pct is None:
+        return False
+    atr_threshold = (atr_value / last_price) * 100.0 * 1.5
+    return abs(distance_pct) <= max(atr_threshold, pct_threshold)
+
+
 def _price(value: float | None) -> float | None:
     if value is None:
         return None
@@ -290,26 +297,51 @@ def build_trade_setup(
         confluences.append("swing_support")
     if ema20 and abs(last_price - ema20) <= atr_value:
         confluences.append("ema20")
-    if fib_low <= last_price <= fib_high or last_price > fib_high:
-        confluences.append("fib_value_area")
     bow_zone_low = min(fib_low, support_price or fib_low)
     bow_zone_high = max(min(fib_high, (support_price or fib_high) + (0.5 * atr_value)), bow_zone_low)
     distance_to_bow = 0.0 if bow_zone_low <= last_price <= bow_zone_high else _pct_distance(last_price, bow_zone_high)
-    dry_pullback = (vol_ratio is not None and vol_ratio <= 0.9) or last_price > bow_zone_high
-    if len(set(confluences)) >= 2 and impulse_high - impulse_low >= 2 * atr_value:
+    near_bow_zone = _within_pct_or_atr(distance_to_bow, atr_value, last_price)
+    price_in_bow_zone = bow_zone_low <= last_price <= bow_zone_high
+    if price_in_bow_zone or near_bow_zone:
+        confluences.append("fib_value_area")
+    dry_pullback = vol_ratio is not None and vol_ratio <= 0.9
+    has_bow_confluence = len(set(confluences)) >= 2 and impulse_high - impulse_low >= 2 * atr_value
+    if has_bow_confluence and (price_in_bow_zone or near_bow_zone):
+        bow_confirmed = price_in_bow_zone and dry_pullback
+        bow_confirmations = ["broker_flow_positive"]
+        if dry_pullback:
+            bow_confirmations.append("volume_pullback_dry")
+        if price_in_bow_zone:
+            bow_confirmations.append("price_in_value_zone")
         return _base_payload(
             setup_type="buy_on_weakness",
-            setup_state="confirmed" if bow_zone_low <= last_price <= bow_zone_high and dry_pullback else "watch",
-            label=f"BOW {'Confirmed' if bow_zone_low <= last_price <= bow_zone_high and dry_pullback else 'Watch'} {round(bow_zone_low)}-{round(bow_zone_high)}",
+            setup_state="confirmed" if bow_confirmed else "watch",
+            label=f"BOW {'Confirmed' if bow_confirmed else 'Watch'} {round(bow_zone_low)}-{round(bow_zone_high)}",
             last_price=last_price,
             zone_low=bow_zone_low,
             zone_high=bow_zone_high,
             invalidation_price=bow_zone_low - (0.25 * atr_value),
             distance_pct=distance_to_bow,
-            confirmations=["volume_pullback_dry", "bullish_rejection", "broker_flow_positive"],
+            confirmations=bow_confirmations,
             confluences=[*dict.fromkeys(confluences)],
-            blockers=[] if bow_zone_low <= last_price <= bow_zone_high and dry_pullback else ["waiting_price_in_zone"],
+            blockers=[] if bow_confirmed else ["waiting_price_in_zone"],
             warnings=[] if dry_pullback else ["pullback_volume_not_dry"],
+            as_of_date=as_of_date,
+        )
+    if has_bow_confluence and last_price > bow_zone_high:
+        return _base_payload(
+            setup_type="wait_value_area",
+            setup_state="watch",
+            label=f"Tunggu area value {round(bow_zone_low)}-{round(bow_zone_high)}",
+            last_price=last_price,
+            zone_low=bow_zone_low,
+            zone_high=bow_zone_high,
+            invalidation_price=bow_zone_low - (0.25 * atr_value),
+            distance_pct=distance_to_bow,
+            confirmations=["structure_holds", "broker_flow_positive"],
+            confluences=[*dict.fromkeys([*confluences, "anti_chasing"])],
+            blockers=["price_extended"],
+            warnings=["anti_chasing"],
             as_of_date=as_of_date,
         )
 
@@ -325,7 +357,7 @@ def build_trade_setup(
             zone_high=zone_high,
             invalidation_price=zone_low - (0.25 * atr_value),
             distance_pct=_pct_distance(last_price, zone_high),
-            confirmations=["dry_pullback_volume", "structure_holds", "broker_flow_positive"],
+            confirmations=["structure_holds", "broker_flow_positive"],
             confluences=["ema20", "anti_chasing"],
             blockers=["price_extended"],
             warnings=["anti_chasing"],

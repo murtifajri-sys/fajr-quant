@@ -30,3 +30,4 @@ Add `[DECISION:]` and `[ERROR:]` lines here, or let the Agent extract them at se
 [ERROR: type=frontend-build-cache-permission | resolution=validate Next build from /tmp copy excluding repo-owned .next-app cache | project: fajr-quant]
 [ERROR: type=screener-run-timeout | resolution=proxy custom screener run through Next API route with longer server-side timeout | project: fajr-quant]
 [ERROR: type=frontend-build-cache-permission | resolution=validate Next build from /tmp copy excluding repo-owned .next-app cache | project: fajr-quant]
+[ERROR: type=bow-setup-overextended | resolution=only label BOW when price is inside or near value zone; route far-above-zone cases to wait_value_area anti-chasing | project: fajr-quant]

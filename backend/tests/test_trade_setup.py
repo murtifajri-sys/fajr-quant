@@ -67,3 +67,18 @@ def test_trade_setup_marks_extended_price_as_value_area_wait():
     assert setup["setup_type"] in {"wait_value_area", "buy_on_weakness", "wait_breakout", "wait_retest"}
     assert setup["last_price"] == 164
     assert setup["invalidation_price"] is not None
+
+
+def test_trade_setup_does_not_label_far_above_value_zone_as_bow():
+    closes = (
+        [100, 102, 104, 103, 105, 107, 106, 108, 110, 109]
+        + [115, 122, 130, 142, 155, 170, 188, 205, 224, 244]
+        + [246, 248, 250, 252, 254, 253, 255, 256, 254, 254]
+    )
+    setup = build_trade_setup(_rows(date(2026, 6, 1), closes), _broker(), _entry())
+
+    assert setup["setup_type"] != "buy_on_weakness"
+    assert setup["setup_type"] in {"wait_value_area", "wait_breakout", "no_setup"}
+    if setup["setup_type"] == "wait_value_area":
+        assert "price_extended" in setup["blockers"]
+        assert "anti_chasing" in setup["warnings"]
