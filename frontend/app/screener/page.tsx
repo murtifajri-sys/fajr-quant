@@ -301,35 +301,44 @@ export default function ScreenerPage() {
         big_accumulation_min_score: brokerLabelMin === "big_accumulation" ? minBrokerConviction : undefined,
         aggressive_accumulation_min_score: brokerLabelMin === "aggressive_accumulation" ? minBrokerConviction : undefined,
       };
-      const r = await api.post("/screener/run", {
-        methods, bandar_labels: bandar, phases,
-        min_composite: minComposite, require_foreign_inflow: requireForeign,
-        breakout_filter: breakout, universe, top_n: topN,
-        require_broker_accumulation: effectiveRequireBroker,
-        broker_period_days: brokerPeriodDays,
-        min_broker_net_pct_mcap: minBrokerMcap,
-        min_broker_net_pct_adv: minBrokerAdv,
-        min_broker_active_days: minBrokerDays,
-        min_broker_positive_ratio: minBrokerPositiveRatio,
-        min_broker_coverage_ratio: minCoverageRatio,
-        max_broker_balance_ratio: maxBalanceRatio,
-        min_broker_conviction_score: minBrokerConviction,
-        min_entry_readiness_score: minEntryReadiness,
-        exclude_stale: excludeStale,
-        exclude_reversal_risk: excludeReversalRisk,
-        exclude_insufficient_data: excludeInsufficientData,
-        require_recent: requireRecent,
-        require_acceleration: requireAcceleration,
-        require_cluster_confirmation: requireClusterConfirmation,
-        sort_by: effectiveSortBy,
-        broker_rank_weight: brokerRankWeight,
-        entry_rank_weight: entryRankWeight,
-        broker_score_config: scoreConfig,
+      const response = await fetch("/api/screener/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        cache: "no-store",
+        body: JSON.stringify({
+          methods, bandar_labels: bandar, phases,
+          min_composite: minComposite, require_foreign_inflow: requireForeign,
+          breakout_filter: breakout, universe, top_n: topN,
+          require_broker_accumulation: effectiveRequireBroker,
+          broker_period_days: brokerPeriodDays,
+          min_broker_net_pct_mcap: minBrokerMcap,
+          min_broker_net_pct_adv: minBrokerAdv,
+          min_broker_active_days: minBrokerDays,
+          min_broker_positive_ratio: minBrokerPositiveRatio,
+          min_broker_coverage_ratio: minCoverageRatio,
+          max_broker_balance_ratio: maxBalanceRatio,
+          min_broker_conviction_score: minBrokerConviction,
+          min_entry_readiness_score: minEntryReadiness,
+          exclude_stale: excludeStale,
+          exclude_reversal_risk: excludeReversalRisk,
+          exclude_insufficient_data: excludeInsufficientData,
+          require_recent: requireRecent,
+          require_acceleration: requireAcceleration,
+          require_cluster_confirmation: requireClusterConfirmation,
+          sort_by: effectiveSortBy,
+          broker_rank_weight: brokerRankWeight,
+          entry_rank_weight: entryRankWeight,
+          broker_score_config: scoreConfig,
+        }),
       });
-      setResults(r.data.results);
-      setSnapshotAt(r.data.created_at || null);
-      setSnapshotRunId(r.data.run_id || null);
-    } catch (e: any) { setErr(e.message); }
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload?.detail || payload?.message || "Failed to run screener");
+      }
+      setResults(payload.results);
+      setSnapshotAt(payload.created_at || null);
+      setSnapshotRunId(payload.run_id || null);
+    } catch (e: any) { setErr(e.message || "Failed to run screener"); }
     setLoading(false);
   }
 

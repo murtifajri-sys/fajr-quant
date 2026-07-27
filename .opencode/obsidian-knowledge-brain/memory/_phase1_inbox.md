@@ -28,3 +28,5 @@ Add `[DECISION:]` and `[ERROR:]` lines here, or let the Agent extract them at se
 [ERROR: type=python-command-missing | resolution=use python3 for local backend py_compile validation | project: fajr-quant]
 [ERROR: type=python-command-missing | resolution=use python3 for local backend test and compile validation | project: fajr-quant]
 [ERROR: type=frontend-build-cache-permission | resolution=validate Next build from /tmp copy excluding repo-owned .next-app cache | project: fajr-quant]
+[ERROR: type=screener-run-timeout | resolution=proxy custom screener run through Next API route with longer server-side timeout | project: fajr-quant]
+[ERROR: type=frontend-build-cache-permission | resolution=validate Next build from /tmp copy excluding repo-owned .next-app cache | project: fajr-quant]
