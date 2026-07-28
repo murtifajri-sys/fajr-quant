@@ -16,6 +16,7 @@ from app.models.broker_flow import BrokerFlow
 from app.models.pipeline_run import PipelineRun
 from app.models.price import DailyPrice
 from app.models.screener import ScreenerResult, ScreenerRun
+from app.models.setting import WatchlistItem
 from app.models.stock import Stock
 from app.services.screener.runner import DEFAULT_SCREENER_SNAPSHOT_NAME
 from app.workers import tasks as worker_tasks
@@ -165,6 +166,58 @@ def test_worker_json_safe_serializes_dates_for_backfill_results():
     assert result["coverage_before"]["items"][0]["date"] == "2026-07-22"
     assert result["coverage_after"]["as_of_date"] == "2026-07-23"
     assert result["failed_dates_by_ticker"]["BBCA"][0]["date"] == "2026-07-21"
+
+
+def test_data_load_idx_universe_ignores_non_empty_watchlist(monkeypatch):
+    db = _make_session()
+    monkeypatch.setattr(worker_tasks.settings, "DAILY_PIPELINE_MAX_TICKERS", 3)
+
+    for ticker in ("ZZZZ", "BBBB", "AAAA", "CCCC"):
+        db.add(Stock(ticker=ticker, name=ticker))
+    db.add(WatchlistItem(name="default", ticker="ZZZZ"))
+    db.commit()
+
+    result = worker_tasks._select_data_load_tickers(db, universe="idx")
+
+    assert result == ["AAAA", "BBBB", "CCCC"]
+
+
+def test_data_load_watchlist_universe_keeps_manual_watchlist_behavior(monkeypatch):
+    db = _make_session()
+    monkeypatch.setattr(worker_tasks.settings, "DAILY_PIPELINE_MAX_TICKERS", 3)
+
+    for ticker in ("AAAA", "BBBB"):
+        db.add(Stock(ticker=ticker, name=ticker))
+    db.add(WatchlistItem(name="default", ticker="BBBB"))
+    db.commit()
+
+    result = worker_tasks._select_data_load_tickers(db, universe="watchlist")
+
+    assert result == ["BBBB"]
+
+
+def test_daily_pipeline_queues_idx_data_load(monkeypatch):
+    db = _make_session()
+    calls = []
+
+    class FakeYFinanceClient:
+        def get_benchmark_prices(self, *_args, **_kwargs):
+            return []
+
+    def fake_apply_async(*, args=None, task_id=None, **kwargs):
+        calls.append({"args": args, "task_id": task_id, "kwargs": kwargs})
+
+    original_db = worker_tasks._db
+    monkeypatch.setattr(worker_tasks, "_db", lambda: db)
+    monkeypatch.setattr("app.clients.yfinance.YFinanceClient", FakeYFinanceClient)
+    monkeypatch.setattr(worker_tasks.run_full_data_load, "apply_async", fake_apply_async)
+    try:
+        worker_tasks.run_daily_pipeline.run()
+    finally:
+        worker_tasks._db = original_db
+
+    assert calls
+    assert calls[0]["args"] == [None, True, "idx"]
 
 
 def test_screener_latest_route_prefers_named_daily_snapshot():

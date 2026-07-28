@@ -189,7 +189,12 @@ def recover_orphaned_runs():
 
 
 @celery_app.task(bind=True, name="run_full_data_load")
-def run_full_data_load(self, ticker: str | None = None, incremental: bool = False):
+def run_full_data_load(
+    self,
+    ticker: str | None = None,
+    incremental: bool = False,
+    universe: str = "watchlist",
+):
     """Load data + run analysis for a single ticker or all watchlist/stocks."""
     from app.services.data_loader import load_prices
     from app.services.pipeline import run_full_analysis
@@ -198,17 +203,7 @@ def run_full_data_load(self, ticker: str | None = None, incremental: bool = Fals
     task_id = self.request.id or str(uuid4())
     run = _start_run(db, task_id, "data_load")
     try:
-        if ticker:
-            tickers = [ticker.upper()]
-        else:
-            tickers = [w.ticker for w in db.execute(select(WatchlistItem)).scalars()]
-            if not tickers:
-                tickers = [
-                    s.ticker
-                    for s in db.execute(
-                        select(Stock).limit(settings.DAILY_PIPELINE_MAX_TICKERS)
-                    ).scalars()
-                ]
+        tickers = _select_data_load_tickers(db, ticker=ticker, universe=universe)
         run.total_tickers = len(tickers)
         db.commit()
 
@@ -265,6 +260,32 @@ def run_full_data_load(self, ticker: str | None = None, incremental: bool = Fals
         raise
     finally:
         db.close()
+
+
+def _select_data_load_tickers(db, ticker: str | None = None, universe: str = "watchlist") -> list[str]:
+    if ticker:
+        return [ticker.upper()]
+    if universe == "idx":
+        return [
+            s.ticker
+            for s in db.execute(
+                select(Stock)
+                .order_by(Stock.ticker.asc())
+                .limit(settings.DAILY_PIPELINE_MAX_TICKERS)
+            ).scalars()
+        ]
+
+    tickers = [w.ticker for w in db.execute(select(WatchlistItem)).scalars()]
+    if tickers:
+        return tickers
+    return [
+        s.ticker
+        for s in db.execute(
+            select(Stock)
+            .order_by(Stock.ticker.asc())
+            .limit(settings.DAILY_PIPELINE_MAX_TICKERS)
+        ).scalars()
+    ]
 
 
 @celery_app.task(bind=True, name="run_scoring_for_ticker")
@@ -769,7 +790,7 @@ def run_daily_pipeline(self):
         )
         db.commit()
         run_full_data_load.apply_async(
-            args=[None, True],
+            args=[None, True, "idx"],
             task_id=data_task_id,
             link=run_ipo_majorholder_refresh.si().set(task_id=holder_task_id)
                  .set(link=run_recommendations_batch.si().set(task_id=rec_task_id)
