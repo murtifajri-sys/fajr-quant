@@ -152,6 +152,12 @@ def test_summarize_broker_accumulation_returns_latest_window_metrics():
     assert summary["cluster_ratio"] == 1.0
     assert summary["top_brokers"][0]["period"] == "1M"
     assert summary["top_brokers"][0]["trading_days"] == 7
+    assert summary["top_brokers"][0]["pct_market_cap"] == 0.0007
+    assert summary["top_brokers"][1]["pct_market_cap"] == 0.0003
+    assert summary["top_brokers"][2]["pct_market_cap"] == -0.001
+    assert summary["top_brokers"][0]["pct_avg_daily_value"] == 70.0
+    assert summary["top_brokers"][1]["pct_avg_daily_value"] == 35.0
+    assert summary["top_brokers"][2]["pct_avg_daily_value"] == -105.0
     assert 0 <= summary["broker_conviction_score"] <= 100
     assert summary["broker_conviction_label"] in {"none", "accumulation", "big_accumulation", "aggressive_accumulation"}
 

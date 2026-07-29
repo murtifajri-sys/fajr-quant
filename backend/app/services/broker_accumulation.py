@@ -656,7 +656,14 @@ def summarize_broker_accumulation(
     }
     for broker in top_brokers:
         broker["days"] = broker["active_days"]
-        broker.update(broker_meta)
+        broker["period_days"] = period_days
+        broker["period"] = period_label
+        broker["start_date"] = start.isoformat()
+        broker["end_date"] = end.isoformat()
+        broker["trading_days"] = len(trading_dates)
+        broker["pct_market_cap"] = _pct(broker["net"], mcap)
+        broker["pct_avg_daily_value"] = _pct(broker["net"], adv)
+        broker["days_of_adv"] = _safe_ratio(broker["net"], adv)
     return result
 
 
