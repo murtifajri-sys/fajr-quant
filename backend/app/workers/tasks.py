@@ -47,20 +47,6 @@ celery_app.conf.update(
             "task": "compute_market_regime",
             "schedule": crontab(hour=17, minute=0, day_of_week="1-5"),
         },
-        "broker-flow-backfill-evening": {
-            "task": "run_broker_flow_backfill",
-            "schedule": crontab(hour=19, minute=0, day_of_week="1-5"),
-            "args": (50, 30, "idx"),
-        },
-        "broker-flow-backfill-evening-2": {
-            "task": "run_broker_flow_backfill",
-            "schedule": crontab(hour=19, minute=30, day_of_week="1-5"),
-            "args": (50, 30, "idx"),
-        },
-        "daily-broker-screener-snapshot": {
-            "task": "run_daily_screener",
-            "schedule": crontab(hour=20, minute=0, day_of_week="1-5"),
-        },
     },
     timezone="Asia/Jakarta",
 )
@@ -321,7 +307,7 @@ def run_scoring_for_ticker(self, ticker: str):
 
 
 @celery_app.task(bind=True, name="run_recommendations_batch")
-def run_recommendations_batch(self):
+def run_recommendations_batch(self, force_regenerate: bool = False):
     """Generate AI recommendations for all tickers that have scores but no recommendations today."""
     from app.models.recommendation import Recommendation
     from app.models.score import Score
@@ -334,6 +320,10 @@ def run_recommendations_batch(self):
         today = date.today()
         # Find tickers with scores today but no recommendations today,
         # limit to top N by composite score to save AI tokens.
+        if force_regenerate:
+            db.query(Recommendation).filter(Recommendation.date == today).delete(synchronize_session=False)
+            db.commit()
+
         recd = {
             r[0] for r in db.execute(
                 select(Recommendation.ticker).where(Recommendation.date == today).distinct()
@@ -426,6 +416,158 @@ def run_recommendations_batch(self):
             "failed": failed,
             "errors": errors,
         }
+        _finish(db, run, result=result)
+        return result
+    except Exception as exc:
+        db.rollback()
+        _finish(db, run, error=str(exc))
+        raise
+    finally:
+        db.close()
+
+
+@celery_app.task(bind=True, name="run_daily_broker_flow_update")
+def run_daily_broker_flow_update(
+    self,
+    universe: str = "idx",
+    tickers: list[str] | None = None,
+):
+    """Fetch broker flow for the latest market date before the daily screener runs."""
+    from sqlalchemy import func
+
+    from app.models.broker_flow import BrokerFlow
+    from app.services.data_loader import backfill_broker_flow_for_ticker, broker_flow_coverage_summary
+
+    db = _db()
+    run = _start_run(db, self.request.id or str(uuid4()), "daily_broker_flow_update")
+    try:
+        latest_market_date = db.execute(select(func.max(DailyPrice.date))).scalar()
+        if not latest_market_date:
+            result = {
+                "processed": 0,
+                "succeeded": 0,
+                "failed": 0,
+                "errors": {},
+                "message": "no_price_data",
+                "as_of_date": None,
+                "universe": universe,
+                "failed_tickers": [],
+            }
+            _finish(db, run, result=result)
+            return result
+
+        selected_tickers = sorted({str(t).upper() for t in (tickers or []) if t})
+        if selected_tickers:
+            tickers_to_process = selected_tickers
+        else:
+            stmt = (
+                select(Stock.ticker)
+                .join(DailyPrice, Stock.ticker == DailyPrice.ticker)
+                .where(DailyPrice.date == latest_market_date)
+                .order_by(Stock.ticker.asc())
+                .limit(settings.DAILY_PIPELINE_MAX_TICKERS)
+            )
+            if universe == "watchlist":
+                watch = select(WatchlistItem.ticker).subquery()
+                stmt = stmt.where(Stock.ticker.in_(select(watch.c.ticker)))
+            tickers_to_process = [r[0] for r in db.execute(stmt).all()]
+
+        run.total_tickers = len(tickers_to_process)
+        db.commit()
+
+        if not tickers_to_process:
+            result = {
+                "processed": 0,
+                "succeeded": 0,
+                "failed": 0,
+                "errors": {},
+                "message": "no_tickers_for_latest_market_date",
+                "as_of_date": latest_market_date.isoformat(),
+                "universe": universe,
+                "failed_tickers": [],
+            }
+            _finish(db, run, result=result)
+            return result
+
+        succeeded = 0
+        failed = 0
+        fetched_dates = 0
+        already_complete = 0
+        errors = {}
+        failed_dates_by_ticker = {}
+        empty_source_dates_by_ticker = {}
+        _progress(db, run, "fetching_latest_broker_flow", 0, len(tickers_to_process), 0, 0)
+
+        for processed, ticker in enumerate(tickers_to_process, start=1):
+            try:
+                has_latest_flow = db.execute(
+                    select(BrokerFlow.date)
+                    .where(BrokerFlow.ticker == ticker, BrokerFlow.date == latest_market_date)
+                    .limit(1)
+                ).scalar_one_or_none()
+                if has_latest_flow:
+                    already_complete += 1
+                    succeeded += 1
+                else:
+                    info = backfill_broker_flow_for_ticker(
+                        db,
+                        ticker,
+                        period_days=1,
+                        target_dates=[latest_market_date],
+                    )
+                    fetched_dates += int(info.get("fetched_dates") or 0)
+                    if info.get("reason") == "already_complete":
+                        already_complete += 1
+                    if info.get("failed_dates"):
+                        failed_dates_by_ticker[ticker] = info.get("failed_dates")
+                    if info.get("empty_source_dates"):
+                        empty_source_dates_by_ticker[ticker] = info.get("empty_source_dates")
+                    succeeded += 1 if info.get("ok") else 0
+                    if not info.get("ok"):
+                        failed += 1
+                        errors[ticker] = info.get("reason", "unknown")
+            except Exception as exc:
+                db.rollback()
+                failed += 1
+                errors[ticker] = str(exc)[:500]
+
+            _progress(
+                db,
+                run,
+                f"fetched_latest_broker_flow:{ticker}",
+                processed,
+                len(tickers_to_process),
+                succeeded,
+                failed,
+            )
+            if self.request.id:
+                self.update_state(
+                    state="PROGRESS",
+                    meta={"processed": processed, "total": len(tickers_to_process), "ticker": ticker},
+                )
+
+        coverage_after = broker_flow_coverage_summary(
+            db,
+            period_days=30,
+            universe=universe,
+            tickers=tickers_to_process,
+            limit=max(len(tickers_to_process), 25),
+        )
+        result = {
+            "processed": len(tickers_to_process),
+            "succeeded": succeeded,
+            "failed": failed,
+            "fetched_dates": fetched_dates,
+            "already_complete": already_complete,
+            "as_of_date": latest_market_date.isoformat(),
+            "universe": universe,
+            "failed_tickers": sorted(errors.keys()),
+            "failed_dates_by_ticker": failed_dates_by_ticker,
+            "empty_source_dates_by_ticker": empty_source_dates_by_ticker,
+            "errors": errors,
+            "coverage_after": coverage_after,
+        }
+        result = _json_safe(result)
         _finish(db, run, result=result)
         return result
     except Exception as exc:
@@ -779,6 +921,15 @@ def run_daily_pipeline(self):
                 stage="waiting_for_worker",
             )
         )
+        broker_flow_task_id = str(uuid4())
+        db.add(
+            PipelineRun(
+                task_id=broker_flow_task_id,
+                task_name="daily_broker_flow_update",
+                status="QUEUED",
+                stage="waiting_for_worker",
+            )
+        )
         holder_task_id = str(uuid4())
         db.add(
             PipelineRun(
@@ -793,13 +944,15 @@ def run_daily_pipeline(self):
             args=[None, True, "idx"],
             task_id=data_task_id,
             link=run_ipo_majorholder_refresh.si().set(task_id=holder_task_id)
+                 .set(link=run_daily_broker_flow_update.si("idx").set(task_id=broker_flow_task_id)
                  .set(link=run_recommendations_batch.si().set(task_id=rec_task_id)
-                 .set(link=run_daily_screener.si().set(link=send_daily_digest.si()))),
+                 .set(link=run_daily_screener.si().set(link=send_daily_digest.si())))),
         )
         result = {
             "ok": True,
             "regime": regime.get("regime"),
             "data_load_task_id": data_task_id,
+            "daily_broker_flow_task_id": broker_flow_task_id,
             "ipo_majorholder_task_id": holder_task_id,
             "recommendations_task_id": rec_task_id,
         }

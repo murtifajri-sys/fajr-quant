@@ -273,19 +273,24 @@ Service file: `scripts/fajr-quant.service`. Service ini:
 Status persisten: `QUEUED`, `STARTED`, `PROGRESS`, `SUCCESS`, atau `FAILURE`.
 Progress menyimpan stage, jumlah ticker diproses/sukses/gagal, result, dan error.
 
-## Broker Flow Backfill
+## Broker Flow Daily Update
 
-Broker flow untuk screener accumulation dibackfill terpisah dari daily pipeline.
+Broker flow untuk screener accumulation berjalan sebagai bagian dari daily pipeline.
+Urutannya dependency-based:
 
-Schedule otomatis Celery Beat:
+- `daily data load` selesai;
+- `run_daily_broker_flow_update` mengambil broker flow untuk tanggal market terbaru;
+- `run_recommendations_batch`;
+- `run_daily_screener`;
+- `send_daily_digest`.
 
-- `19:00 WIB` hari kerja → `run_broker_flow_backfill`
-- `19:30 WIB` hari kerja → `run_broker_flow_backfill`
-- `20:00 WIB` hari kerja → `run_daily_screener` untuk snapshot broker screener
+`run_broker_flow_backfill` tidak lagi dijadwalkan rutin pukul 19:00/19:30 WIB.
+Backfill dipakai manual/retry hanya saat coverage turun atau update harian gagal.
 
 Trigger manual:
 
 ```bash
+docker compose exec -T worker celery -A app.workers.tasks call run_daily_broker_flow_update --args='["idx"]'
 curl -X POST "http://localhost:8000/api/v1/tasks/broker-flow-backfill?limit=50&period_days=30&universe=idx"
 curl -X POST "http://localhost:8000/api/v1/tasks/daily-screener-snapshot"
 ```

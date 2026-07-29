@@ -218,6 +218,67 @@ def test_daily_pipeline_queues_idx_data_load(monkeypatch):
 
     assert calls
     assert calls[0]["args"] == [None, True, "idx"]
+    task_names = {r.task_name for r in db.query(PipelineRun).all()}
+    assert "daily_broker_flow_update" in task_names
+
+
+def test_daily_schedule_uses_dependency_chain_for_broker_flow():
+    schedule = worker_tasks.celery_app.conf.beat_schedule
+
+    assert "daily-pipeline" in schedule
+    assert "broker-flow-backfill-evening" not in schedule
+    assert "broker-flow-backfill-evening-2" not in schedule
+    assert "daily-broker-screener-snapshot" not in schedule
+
+
+def test_daily_broker_flow_update_fetches_latest_market_date(monkeypatch):
+    db = _make_session()
+    latest = date(2026, 7, 29)
+    previous = date(2026, 7, 28)
+    for ticker in ("BEEF", "BBCA"):
+        db.add(Stock(ticker=ticker, name=ticker))
+        for d in (previous, latest):
+            db.add(
+                DailyPrice(
+                    ticker=ticker,
+                    date=d,
+                    open=10,
+                    high=11,
+                    low=9,
+                    close=10,
+                    adj_close=10,
+                    volume=1_000,
+                    source="stockbit",
+                )
+            )
+    db.add(BrokerFlow(ticker="BBCA", date=latest, broker="SQ", buy_value=10, sell_value=0, net_value=10))
+    db.commit()
+
+    calls = []
+
+    def fake_backfill(db_arg, ticker, period_days=30, target_dates=None):
+        calls.append({"ticker": ticker, "period_days": period_days, "target_dates": target_dates})
+        return {
+            "ok": True,
+            "reason": "backfilled",
+            "fetched_dates": 1,
+            "failed_dates": [],
+            "empty_source_dates": [],
+        }
+
+    original_db = worker_tasks._db
+    monkeypatch.setattr(worker_tasks, "_db", lambda: db)
+    monkeypatch.setattr("app.services.data_loader.backfill_broker_flow_for_ticker", fake_backfill)
+    try:
+        result = worker_tasks.run_daily_broker_flow_update.run("idx")
+    finally:
+        worker_tasks._db = original_db
+
+    assert result["as_of_date"] == "2026-07-29"
+    assert result["processed"] == 2
+    assert result["succeeded"] == 2
+    assert result["already_complete"] == 1
+    assert calls == [{"ticker": "BEEF", "period_days": 1, "target_dates": [latest]}]
 
 
 def test_screener_latest_route_prefers_named_daily_snapshot():
