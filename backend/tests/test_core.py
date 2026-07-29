@@ -97,6 +97,33 @@ def test_stockbit_daily_response_parser():
     ]
 
 
+def test_telegram_digest_splits_long_messages(monkeypatch):
+    from app.services.notifier import telegram
+
+    sent = []
+
+    def fake_send(chat_id, text, parse_mode="Markdown"):
+        sent.append({"chat_id": chat_id, "text": text, "parse_mode": parse_mode})
+        return True
+
+    monkeypatch.setattr(telegram, "_send", fake_send)
+    recommendations = [
+        {
+            "ticker": f"T{i:03d}",
+            "action": "ACCUMULATE",
+            "entry": 100,
+            "stop": 95,
+            "target": 115,
+            "rationale": "long rationale " * 80,
+        }
+        for i in range(20)
+    ]
+
+    assert telegram.send_digest("123", recommendations, []) is True
+    assert len(sent) > 1
+    assert all(len(message["text"]) <= telegram.TELEGRAM_MAX_MESSAGE_CHARS for message in sent)
+
+
 def test_stockbit_broker_response_parser():
     from app.services.data_loader import _parse_market_detectors
 

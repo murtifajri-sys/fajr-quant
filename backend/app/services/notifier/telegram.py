@@ -9,6 +9,8 @@ from sqlalchemy import select
 from app.core.config import settings
 from app.core.logging import log
 
+TELEGRAM_MAX_MESSAGE_CHARS = 3800
+
 
 def _send(chat_id: str, text: str, parse_mode: str = "Markdown") -> bool:
     token = settings.TELEGRAM_BOT_TOKEN
@@ -26,6 +28,53 @@ def _send(chat_id: str, text: str, parse_mode: str = "Markdown") -> bool:
 
 def send_test_message(chat_id: str) -> bool:
     return _send(chat_id, "*Fajr Quant*: test message OK.")
+
+
+def _chunk_digest_blocks(blocks: list[str], max_chars: int = TELEGRAM_MAX_MESSAGE_CHARS) -> list[str]:
+    messages: list[str] = []
+    current = ""
+    for block in blocks:
+        candidate = f"{current}\n\n{block}" if current else block
+        if len(candidate) <= max_chars:
+            current = candidate
+            continue
+
+        if current:
+            messages.append(current)
+            current = ""
+
+        if len(block) <= max_chars:
+            current = block
+            continue
+
+        lines = block.splitlines()
+        for line in lines:
+            if not line:
+                candidate = f"{current}\n" if current else ""
+                if len(candidate) <= max_chars:
+                    current = candidate
+                else:
+                    messages.append(current)
+                    current = ""
+                continue
+
+            while len(line) > max_chars:
+                if current:
+                    messages.append(current)
+                    current = ""
+                messages.append(line[:max_chars])
+                line = line[max_chars:]
+
+            candidate = f"{current}\n{line}" if current else line
+            if len(candidate) <= max_chars:
+                current = candidate
+            else:
+                messages.append(current)
+                current = line
+
+    if current:
+        messages.append(current)
+    return messages
 
 
 def send_token_expired_alert(db, ticker: str = "", task_name: str = "", detail: str = ""):
@@ -53,23 +102,28 @@ def send_token_expired_alert(db, ticker: str = "", task_name: str = "", detail: 
 
 
 def send_digest(chat_id: str, recommendations: list[dict], screener_rows: list[dict]) -> bool:
-    lines = ["*Fajr Quant - Daily Digest*", ""]
+    blocks = ["*Fajr Quant - Daily Digest*"]
     if screener_rows:
-        lines.append("*Top Screener:*")
+        lines = ["*Top Screener:*"]
         for r in screener_rows[:10]:
             lines.append(
                 f"- `{r['ticker']}` {r.get('name','')} | score {r['composite']:.0f} | {r['phase']}"
             )
-        lines.append("")
+        blocks.append("\n".join(lines))
     if recommendations:
-        lines.append("*Recommendations:*")
+        blocks.append("*Recommendations:*")
         for rec in recommendations:
-            lines.append(
+            lines = [
                 f"*{rec['ticker']}* -> {rec['action']} "
                 f"entry {rec.get('entry')} / stop {rec.get('stop')} / target {rec.get('target')}"
-            )
+            ]
             if rec.get("rationale"):
                 lines.append(f"  _{rec['rationale']}_")
+            blocks.append("\n".join(lines))
     if not screener_rows and not recommendations:
-        lines.append("_No signals today._")
-    return _send(chat_id, "\n".join(lines))
+        blocks.append("_No signals today._")
+
+    sent = []
+    for message in _chunk_digest_blocks(blocks):
+        sent.append(_send(chat_id, message))
+    return all(sent)
