@@ -33,6 +33,7 @@ const SORT_OPTIONS = [
   ["entry_readiness", "Entry Readiness"],
   ["composite", "Composite"],
 ] as const;
+type OptionalNumber = number | "";
 
 const COLUMN_HINTS: Record<string, string> = {
   conviction: "Skor 0-100 yang merangkum magnitude, persistence, recency, acceleration, retention, cluster, purity, dan quality broker flow.",
@@ -104,6 +105,14 @@ function fmtNum(v?: number | null, digits = 1) {
 function fmtWinRate(v?: number | null) {
   if (v === null || v === undefined) return "-";
   return `${(v * 100).toFixed(1)}%`;
+}
+
+function optionalNumber(v: OptionalNumber) {
+  return v === "" ? null : v;
+}
+
+function inputNumber(v: string): OptionalNumber {
+  return v === "" ? "" : Number(v);
 }
 
 function HeaderHint({ label, hint }: { label: string; hint?: string }) {
@@ -194,28 +203,29 @@ export default function ScreenerPage() {
   const [methods, setMethods] = useState<string[]>([]);
   const [bandar, setBandar] = useState<string[]>([]);
   const [phases, setPhases] = useState<string[]>([]);
-  const [minComposite, setMinComposite] = useState(60);
+  const [minComposite, setMinComposite] = useState<OptionalNumber>("");
   const [requireForeign, setRequireForeign] = useState(false);
   const [breakout, setBreakout] = useState(false);
   const [requireBroker, setRequireBroker] = useState(true);
   const [brokerPeriodDays, setBrokerPeriodDays] = useState(30);
   const [brokerLabelMin, setBrokerLabelMin] = useState("accumulation");
-  const [minBrokerMcap, setMinBrokerMcap] = useState(0.05);
-  const [minBrokerAdv, setMinBrokerAdv] = useState(0.5);
-  const [minBrokerDays, setMinBrokerDays] = useState(3);
-  const [minBrokerPositiveRatio, setMinBrokerPositiveRatio] = useState(0.5);
-  const [minCoverageRatio, setMinCoverageRatio] = useState(0.8);
-  const [maxBalanceRatio, setMaxBalanceRatio] = useState(0.05);
-  const [minBrokerConviction, setMinBrokerConviction] = useState(55);
-  const [minEntryReadiness, setMinEntryReadiness] = useState(45);
-  const [excludeStale, setExcludeStale] = useState(true);
+  const [minBrokerMcap, setMinBrokerMcap] = useState<OptionalNumber>(0.05);
+  const [minBrokerAdv, setMinBrokerAdv] = useState<OptionalNumber>(0.5);
+  const [minBrokerDays, setMinBrokerDays] = useState<OptionalNumber>(3);
+  const [minBrokerPositiveRatio, setMinBrokerPositiveRatio] = useState<OptionalNumber>(0.5);
+  const [minCoverageRatio, setMinCoverageRatio] = useState<OptionalNumber>(0.8);
+  const [maxBalanceRatio, setMaxBalanceRatio] = useState<OptionalNumber>("");
+  const [minBrokerConviction, setMinBrokerConviction] = useState<OptionalNumber>(55);
+  const [minEntryReadiness, setMinEntryReadiness] = useState<OptionalNumber>(45);
+  const [excludeStale, setExcludeStale] = useState(false);
   const [excludeReversalRisk, setExcludeReversalRisk] = useState(true);
   const [excludeInsufficientData, setExcludeInsufficientData] = useState(true);
-  const [requireRecent, setRequireRecent] = useState(true);
+  const [requireRecent, setRequireRecent] = useState(false);
   const [requireAcceleration, setRequireAcceleration] = useState(false);
   const [requireClusterConfirmation, setRequireClusterConfirmation] = useState(false);
   const [tradeStatusFilter, setTradeStatusFilter] = useState("all");
   const [setupFilter, setSetupFilter] = useState<SetupFilter>("all");
+  const [resultSearch, setResultSearch] = useState("");
   const [sortBy, setSortBy] = useState("combined_rank");
   const [brokerRankWeight, setBrokerRankWeight] = useState(0.7);
   const [entryRankWeight, setEntryRankWeight] = useState(0.3);
@@ -244,6 +254,37 @@ export default function ScreenerPage() {
     set(arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v]);
   }
 
+  function applyScreenerFilter(filter: any) {
+    if (!filter) return;
+    setMethods(filter.methods || []);
+    setBandar(filter.bandar_labels || []);
+    setPhases(filter.phases || []);
+    setMinComposite(filter.min_composite ?? "");
+    setRequireForeign(Boolean(filter.require_foreign_inflow));
+    setBreakout(Boolean(filter.breakout_filter));
+    setRequireBroker(Boolean(filter.require_broker_accumulation));
+    setBrokerPeriodDays(filter.broker_period_days ?? 30);
+    setMinBrokerMcap(filter.min_broker_net_pct_mcap ?? "");
+    setMinBrokerAdv(filter.min_broker_net_pct_adv ?? "");
+    setMinBrokerDays(filter.min_broker_active_days ?? "");
+    setMinBrokerPositiveRatio(filter.min_broker_positive_ratio ?? "");
+    setMinCoverageRatio(filter.min_broker_coverage_ratio ?? "");
+    setMaxBalanceRatio(filter.max_broker_balance_ratio ?? "");
+    setMinBrokerConviction(filter.min_broker_conviction_score ?? "");
+    setMinEntryReadiness(filter.min_entry_readiness_score ?? "");
+    setExcludeStale(Boolean(filter.exclude_stale));
+    setExcludeReversalRisk(filter.exclude_reversal_risk ?? true);
+    setExcludeInsufficientData(filter.exclude_insufficient_data ?? true);
+    setRequireRecent(Boolean(filter.require_recent));
+    setRequireAcceleration(Boolean(filter.require_acceleration));
+    setRequireClusterConfirmation(Boolean(filter.require_cluster_confirmation));
+    setSortBy(filter.sort_by || "combined_rank");
+    setBrokerRankWeight(filter.broker_rank_weight ?? 0.7);
+    setEntryRankWeight(filter.entry_rank_weight ?? 0.3);
+    setUniverse(filter.universe || "idx");
+    setTopN(filter.top_n ?? 20);
+  }
+
   useEffect(() => {
     setSnapshotLoading(true);
     api.get("/screener/latest")
@@ -252,6 +293,7 @@ export default function ScreenerPage() {
         setResults(r.data.results || []);
         setSnapshotAt(r.data.created_at || null);
         setSnapshotRunId(r.data.run_id || null);
+        applyScreenerFilter(r.data.filter);
       })
       .catch(() => {})
       .finally(() => setSnapshotLoading(false));
@@ -265,9 +307,10 @@ export default function ScreenerPage() {
         period_days: String(brokerPeriodDays),
         lookback_days: String(backtestLookbackDays),
         universe,
-        min_label_score: String(minBrokerConviction),
         sample_limit: String(backtestSampleLimit),
       });
+      const labelScore = optionalNumber(minBrokerConviction);
+      if (labelScore !== null) qs.set("min_label_score", String(labelScore));
       const response = await fetch(`/api/screener/backtest?${qs.toString()}`, { cache: "no-store" });
       const payload = await response.json();
       if (!response.ok) {
@@ -296,10 +339,11 @@ export default function ScreenerPage() {
     const effectiveSortBy = overrides.sortBy ?? sortBy;
     setLoading(true); setErr("");
     try {
+      const scoreThreshold = optionalNumber(minBrokerConviction) ?? undefined;
       const scoreConfig = {
-        accumulation_min_score: brokerLabelMin === "accumulation" ? minBrokerConviction : undefined,
-        big_accumulation_min_score: brokerLabelMin === "big_accumulation" ? minBrokerConviction : undefined,
-        aggressive_accumulation_min_score: brokerLabelMin === "aggressive_accumulation" ? minBrokerConviction : undefined,
+        accumulation_min_score: brokerLabelMin === "accumulation" ? scoreThreshold : undefined,
+        big_accumulation_min_score: brokerLabelMin === "big_accumulation" ? scoreThreshold : undefined,
+        aggressive_accumulation_min_score: brokerLabelMin === "aggressive_accumulation" ? scoreThreshold : undefined,
       };
       const response = await fetch("/api/screener/run", {
         method: "POST",
@@ -307,18 +351,18 @@ export default function ScreenerPage() {
         cache: "no-store",
         body: JSON.stringify({
           methods, bandar_labels: bandar, phases,
-          min_composite: minComposite, require_foreign_inflow: requireForeign,
+          min_composite: optionalNumber(minComposite), require_foreign_inflow: requireForeign,
           breakout_filter: breakout, universe, top_n: topN,
           require_broker_accumulation: effectiveRequireBroker,
           broker_period_days: brokerPeriodDays,
-          min_broker_net_pct_mcap: minBrokerMcap,
-          min_broker_net_pct_adv: minBrokerAdv,
-          min_broker_active_days: minBrokerDays,
-          min_broker_positive_ratio: minBrokerPositiveRatio,
-          min_broker_coverage_ratio: minCoverageRatio,
-          max_broker_balance_ratio: maxBalanceRatio,
-          min_broker_conviction_score: minBrokerConviction,
-          min_entry_readiness_score: minEntryReadiness,
+          min_broker_net_pct_mcap: optionalNumber(minBrokerMcap),
+          min_broker_net_pct_adv: optionalNumber(minBrokerAdv),
+          min_broker_active_days: optionalNumber(minBrokerDays),
+          min_broker_positive_ratio: optionalNumber(minBrokerPositiveRatio),
+          min_broker_coverage_ratio: optionalNumber(minCoverageRatio),
+          max_broker_balance_ratio: optionalNumber(maxBalanceRatio),
+          min_broker_conviction_score: optionalNumber(minBrokerConviction),
+          min_entry_readiness_score: optionalNumber(minEntryReadiness),
           exclude_stale: excludeStale,
           exclude_reversal_risk: excludeReversalRisk,
           exclude_insufficient_data: excludeInsufficientData,
@@ -342,12 +386,32 @@ export default function ScreenerPage() {
     setLoading(false);
   }
 
+  const searchTerm = resultSearch.trim().toLowerCase();
   const renderedResults = results
     .map((row) => {
       const broker = row.dominant_factors?.broker_accumulation;
       const tradeStatus = requireBroker ? screenerTradeStatus(row, broker) : null;
       const setup = requireBroker ? normalizeTradeSetup(row, broker) : null;
       return { row, broker, tradeStatus, setup };
+    })
+    .filter(({ row, broker, tradeStatus, setup }) => {
+      if (!searchTerm) return true;
+      const haystack = [
+        row.ticker,
+        row.name,
+        row.phase,
+        row.broker_conviction_label,
+        row.flow_quality_label,
+        row.broker_status,
+        broker?.top_broker,
+        ...(broker?.cluster_brokers || []),
+        tradeStatus?.label,
+        setup?.label,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(searchTerm);
     })
     .filter((item) => tradeStatusFilter === "all" || item.tradeStatus?.code === tradeStatusFilter)
     .filter((item) => !requireBroker || setupMatchesFilter(item.setup!, setupFilter, item.tradeStatus?.code));
@@ -529,7 +593,7 @@ export default function ScreenerPage() {
           </div>
         )}
         <div className="grid grid-cols-3 gap-3">
-          <div><label className="text-sm text-slate-400">Min composite</label><input type="number" className="input" value={minComposite} onChange={(e) => setMinComposite(+e.target.value)} /></div>
+          <div><label className="text-sm text-slate-400">Min composite</label><input type="number" className="input" value={minComposite} onChange={(e) => setMinComposite(inputNumber(e.target.value))} /></div>
           <div><label className="text-sm text-slate-400">Universe</label><select className="input" value={universe} onChange={(e) => setUniverse(e.target.value)}><option value="idx">IDX</option><option value="watchlist">Watchlist</option></select></div>
           <div><label className="text-sm text-slate-400">Top N</label><input type="number" className="input" value={topN} onChange={(e) => setTopN(+e.target.value)} /></div>
         </div>
@@ -551,18 +615,18 @@ export default function ScreenerPage() {
                   <option value={7}>1W</option><option value={30}>1M</option>
                 </select>
               </div>
-              <div><label className="text-sm text-slate-400">Min conviction</label><input type="number" step="1" className="input" value={minBrokerConviction} onChange={(e) => setMinBrokerConviction(+e.target.value)} /></div>
-              <div><label className="text-sm text-slate-400">Min entry readiness</label><input type="number" step="1" className="input" value={minEntryReadiness} onChange={(e) => setMinEntryReadiness(+e.target.value)} /></div>
+              <div><label className="text-sm text-slate-400">Min conviction</label><input type="number" step="1" className="input" value={minBrokerConviction} onChange={(e) => setMinBrokerConviction(inputNumber(e.target.value))} /></div>
+              <div><label className="text-sm text-slate-400">Min entry readiness</label><input type="number" step="1" className="input" value={minEntryReadiness} onChange={(e) => setMinEntryReadiness(inputNumber(e.target.value))} /></div>
             </div>
             <div className="grid grid-cols-4 gap-3">
-              <div><label className="text-sm text-slate-400">Min %MCap</label><input type="number" step="0.01" className="input" value={minBrokerMcap} onChange={(e) => setMinBrokerMcap(+e.target.value)} /></div>
-              <div><label className="text-sm text-slate-400">Min Days ADV</label><input type="number" step="0.1" className="input" value={minBrokerAdv} onChange={(e) => setMinBrokerAdv(+e.target.value)} /></div>
-              <div><label className="text-sm text-slate-400">Min positive days</label><input type="number" className="input" value={minBrokerDays} onChange={(e) => setMinBrokerDays(+e.target.value)} /></div>
-              <div><label className="text-sm text-slate-400">Min positive ratio</label><input type="number" step="0.05" className="input" value={minBrokerPositiveRatio} onChange={(e) => setMinBrokerPositiveRatio(+e.target.value)} /></div>
+              <div><label className="text-sm text-slate-400">Min %MCap</label><input type="number" step="0.01" className="input" value={minBrokerMcap} onChange={(e) => setMinBrokerMcap(inputNumber(e.target.value))} /></div>
+              <div><label className="text-sm text-slate-400">Min Days ADV</label><input type="number" step="0.1" className="input" value={minBrokerAdv} onChange={(e) => setMinBrokerAdv(inputNumber(e.target.value))} /></div>
+              <div><label className="text-sm text-slate-400">Min positive days</label><input type="number" className="input" value={minBrokerDays} onChange={(e) => setMinBrokerDays(inputNumber(e.target.value))} /></div>
+              <div><label className="text-sm text-slate-400">Min positive ratio</label><input type="number" step="0.05" className="input" value={minBrokerPositiveRatio} onChange={(e) => setMinBrokerPositiveRatio(inputNumber(e.target.value))} /></div>
             </div>
             <div className="grid grid-cols-4 gap-3">
-              <div><label className="text-sm text-slate-400">Min coverage</label><input type="number" step="0.05" className="input" value={minCoverageRatio} onChange={(e) => setMinCoverageRatio(+e.target.value)} /></div>
-              <div><label className="text-sm text-slate-400">Max balance ratio</label><input type="number" step="0.01" className="input" value={maxBalanceRatio} onChange={(e) => setMaxBalanceRatio(+e.target.value)} /></div>
+              <div><label className="text-sm text-slate-400">Min coverage</label><input type="number" step="0.05" className="input" value={minCoverageRatio} onChange={(e) => setMinCoverageRatio(inputNumber(e.target.value))} /></div>
+              <div><label className="text-sm text-slate-400">Max balance ratio</label><input type="number" step="0.01" className="input" value={maxBalanceRatio} onChange={(e) => setMaxBalanceRatio(inputNumber(e.target.value))} /></div>
               <div><label className="text-sm text-slate-400">Broker rank weight</label><input type="number" step="0.05" className="input" value={brokerRankWeight} onChange={(e) => setBrokerRankWeight(+e.target.value)} /></div>
               <div><label className="text-sm text-slate-400">Entry rank weight</label><input type="number" step="0.05" className="input" value={entryRankWeight} onChange={(e) => setEntryRankWeight(+e.target.value)} /></div>
             </div>
@@ -618,7 +682,7 @@ export default function ScreenerPage() {
           </div>
           <div>
             <label className="text-sm text-slate-400">Min label score</label>
-            <input type="number" className="input" value={minBrokerConviction} onChange={(e) => setMinBrokerConviction(+e.target.value)} />
+            <input type="number" className="input" value={minBrokerConviction} onChange={(e) => setMinBrokerConviction(inputNumber(e.target.value))} />
           </div>
           <div className="flex items-end">
             <button className="btn w-full" onClick={loadBacktest} disabled={backtestLoading}>
@@ -731,6 +795,14 @@ export default function ScreenerPage() {
             </div>
           )}
         </div>
+        <div className="mb-3 max-w-sm">
+          <input
+            className="input"
+            placeholder="Search ticker, name, broker, label..."
+            value={resultSearch}
+            onChange={(e) => setResultSearch(e.target.value)}
+          />
+        </div>
         {requireBroker && (
           <div className="mb-3 space-y-2">
             <p className="text-xs text-slate-500">
@@ -785,7 +857,13 @@ export default function ScreenerPage() {
         <table className="w-full text-sm">
           <thead><tr className="text-slate-400"><th className="text-left">#</th><th>Ticker</th><th>Name</th><th>Score</th><th><HeaderHint label="Tech Phase" hint={COLUMN_HINTS.techPhase} /></th>{requireBroker && <><th><HeaderHint label="Trade" hint={COLUMN_HINTS.trade} /></th><th><HeaderHint label="Setup" hint={COLUMN_HINTS.setup} /></th><th><HeaderHint label="Target" hint={COLUMN_HINTS.setup} /></th><th><HeaderHint label="Jarak" hint={COLUMN_HINTS.distance} /></th><th>Invalidasi</th><th><HeaderHint label="Conviction" hint={COLUMN_HINTS.conviction} /></th><th><HeaderHint label="Flow" hint={COLUMN_HINTS.flow} /></th><th><HeaderHint label="Closest" hint={COLUMN_HINTS.closest} /></th><th><HeaderHint label="Entry" hint={COLUMN_HINTS.entry} /></th><th><HeaderHint label="Combined" hint={COLUMN_HINTS.combined} /></th><th><HeaderHint label="Status" hint={COLUMN_HINTS.status} /></th><th><HeaderHint label="Label" hint={COLUMN_HINTS.label} /></th><th><HeaderHint label="Broker / Cluster" hint={COLUMN_HINTS.broker} /></th><th><HeaderHint label="Net" hint={COLUMN_HINTS.net} /></th><th><HeaderHint label="%MCap" hint={COLUMN_HINTS.mcap} /></th><th><HeaderHint label="Days ADV" hint={COLUMN_HINTS.adv} /></th><th><HeaderHint label="Pos Days" hint={COLUMN_HINTS.pos} /></th><th><HeaderHint label="Last Buy" hint={COLUMN_HINTS.lastBuy} /></th><th><HeaderHint label="Warnings" hint={COLUMN_HINTS.warnings} /></th></>}</tr></thead>
           <tbody>
-            {renderedResults.map(({ row: r, broker, tradeStatus, setup }) => {
+            {renderedResults.length === 0 ? (
+              <tr className="border-t border-slate-800">
+                <td colSpan={requireBroker ? 24 : 5} className="py-8 text-center text-slate-500">
+                  No data found
+                </td>
+              </tr>
+            ) : renderedResults.map(({ row: r, broker, tradeStatus, setup }) => {
               const warnings = brokerWarnings(broker);
               return (
                 <tr key={r.ticker} className="border-t border-slate-800">

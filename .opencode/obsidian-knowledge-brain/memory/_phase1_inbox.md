@@ -37,3 +37,4 @@ Add `[DECISION:]` and `[ERROR:]` lines here, or let the Agent extract them at se
 [ERROR: type=test-invocation-import | resolution=run backend tests from backend directory so app package is on sys.path | project: fajr-quant]
 [ERROR: type=celery-update-state-empty-task-id | resolution=skip update_state when bound task is run directly without request id | project: fajr-quant]
 [ERROR: type=pytest-assertion | resolution=align broker pct regression expectations with 4-decimal _pct rounding | project: fajr-quant]
+[ERROR: type=next-build-cache-permission | resolution=restore user write permission on frontend .next-app cache before running Next build | project: fajr-quant]
