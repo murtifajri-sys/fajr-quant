@@ -52,7 +52,7 @@ export default async function Dashboard() {
     const [recRes, screenRes, monitorRes, runRes, watchRes] = await Promise.allSettled([
       api.get("/data/recommendations", { params: { limit: 8 } }),
       api.get("/screener/latest"),
-      api.get("/screener/trade-monitor", { params: { limit: 12 } }),
+      api.get("/screener/trade-monitor", { params: { limit: 10 } }),
       api.get("/tasks/runs", { params: { limit: 10 } }),
       api.get("/watchlist"),
     ]);
@@ -70,8 +70,14 @@ export default async function Dashboard() {
   const backfillRun = runs.find((run: any) => run.task_name === "broker_flow_backfill");
   const screenerRows = latest?.results || [];
   const brokerRows = screenerRows.filter((row: any) => row.broker_conviction_score !== null && row.broker_conviction_score !== undefined);
-  const tradeRows = monitorRows.length > 0 ? monitorRows : brokerRows.slice(0, 8);
-  const tradeCandidates = tradeRows.map((row: any) => {
+  const topScoreRows = [...screenerRows].sort((a: any, b: any) => (b.composite || 0) - (a.composite || 0));
+  const monitorTickers = new Set(monitorRows.map((row: any) => row.ticker));
+  const bestRows = [
+    ...monitorRows,
+    ...topScoreRows.filter((row: any) => !monitorTickers.has(row.ticker)),
+  ].slice(0, 10);
+  const bestSourceText = monitorRows.length > 0 ? "Auto: broker + entry" : "Auto: top score";
+  const tradeCandidates = bestRows.map((row: any) => {
     const broker = row.dominant_factors?.broker_accumulation;
     const setup = normalizeTradeSetup(row, broker);
     return { row, broker, setup };
@@ -128,19 +134,20 @@ export default async function Dashboard() {
       <div className="grid gap-4 lg:grid-cols-3">
         <div className="card lg:col-span-2">
           <div className="mb-3 flex items-center justify-between gap-3">
-            <h2 className="font-semibold">Trade Monitor</h2>
+            <h2 className="font-semibold">Pilihan Terbaik</h2>
             <div className="flex items-center gap-3">
-              <span className="text-xs text-slate-500">{monitorRows.length > 0 ? "Top trade score" : "Fallback snapshot"}</span>
+              <span className="text-xs text-slate-500">{bestSourceText}</span>
               <a href="/ai-screener" className="text-sm text-sky-300 underline-offset-4 hover:underline">AI Screener</a>
             </div>
           </div>
           {tradeCandidates.length === 0 ? (
-            <p className="text-sm text-slate-400">Belum ada kandidat trade dari score dan broker flow terbaru.</p>
+            <p className="text-sm text-slate-400">Belum ada pilihan terbaik dari score dan broker flow terbaru.</p>
           ) : (
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-slate-400">
                   <th className="text-left">Ticker</th>
+                  <th>Score</th>
                   <th>Conv</th>
                   <th>Entry</th>
                   <th>Flow</th>
@@ -153,6 +160,7 @@ export default async function Dashboard() {
                 {tradeCandidates.map(({ row, broker, setup }: any) => (
                   <tr key={row.ticker} className="border-t border-slate-800">
                     <td className="py-2"><TickerLink ticker={row.ticker} /></td>
+                    <td className="text-center font-mono text-white">{fmtNum(row.composite)}</td>
                     <td className="text-center font-mono text-amber-300">{fmtNum(row.broker_conviction_score)}</td>
                     <td className="text-center font-mono text-sky-300">{fmtNum(row.entry_readiness_score)}</td>
                     <td className="text-center">
