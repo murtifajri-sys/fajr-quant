@@ -41,7 +41,6 @@ function setupClass(setupType?: string | null) {
 }
 
 export default async function Dashboard() {
-  let recs: any[] = [];
   let latest: any = null;
   let monitorRows: any[] = [];
   let runs: any[] = [];
@@ -49,19 +48,17 @@ export default async function Dashboard() {
   let backendOk = true;
 
   try {
-    const [recRes, screenRes, monitorRes, runRes, watchRes] = await Promise.allSettled([
-      api.get("/data/recommendations", { params: { limit: 8 } }),
+    const [screenRes, monitorRes, runRes, watchRes] = await Promise.allSettled([
       api.get("/screener/latest"),
       api.get("/screener/trade-monitor", { params: { limit: 10 } }),
       api.get("/tasks/runs", { params: { limit: 10 } }),
       api.get("/watchlist"),
     ]);
-    if (recRes.status === "fulfilled") recs = recRes.value.data?.items || recRes.value.data || [];
     if (screenRes.status === "fulfilled") latest = screenRes.value.data;
     if (monitorRes.status === "fulfilled") monitorRows = monitorRes.value.data || [];
     if (runRes.status === "fulfilled") runs = runRes.value.data || [];
     if (watchRes.status === "fulfilled") watchlist = watchRes.value.data || [];
-    backendOk = [recRes, screenRes, runRes, watchRes].some((result) => result.status === "fulfilled");
+    backendOk = [screenRes, runRes, watchRes].some((result) => result.status === "fulfilled");
   } catch {
     backendOk = false;
   }
@@ -82,8 +79,16 @@ export default async function Dashboard() {
     const setup = normalizeTradeSetup(row, broker);
     return { row, broker, setup };
   });
+  const bestBrokerRows = [...brokerRows]
+    .sort((a: any, b: any) => {
+      const convictionDelta = (b.broker_conviction_score || 0) - (a.broker_conviction_score || 0);
+      if (convictionDelta !== 0) return convictionDelta;
+      const flowDelta = (b.flow_quality_score || 0) - (a.flow_quality_score || 0);
+      if (flowDelta !== 0) return flowDelta;
+      return (b.composite || 0) - (a.composite || 0);
+    })
+    .slice(0, 8);
   const smartLikeCount = brokerRows.filter((row: any) => row.flow_quality_label === "smart_like_accumulation").length;
-  const latestRecommendationDate = recs[0]?.date || null;
 
   return (
     <div className="space-y-6">
@@ -206,24 +211,30 @@ export default async function Dashboard() {
       <div className="grid gap-4 lg:grid-cols-2">
         <div className="card">
           <div className="mb-3 flex items-center justify-between gap-3">
-            <h2 className="font-semibold">Latest Recommendations</h2>
-            <div className="text-xs text-slate-500">{latestRecommendationDate ? `Latest ${latestRecommendationDate}` : "No data"}</div>
+            <h2 className="font-semibold">Best Broker Summary</h2>
+            <div className="text-xs text-slate-500">{latest?.created_at ? new Date(latest.created_at).toLocaleString() : "No data"}</div>
           </div>
-          {recs.length === 0 ? (
-            <p className="text-slate-400 text-sm">Belum ada rekomendasi tersimpan.</p>
+          {bestBrokerRows.length === 0 ? (
+            <p className="text-slate-400 text-sm">Belum ada broker summary dari snapshot terbaru.</p>
           ) : (
             <table className="w-full text-sm">
-              <thead><tr className="text-slate-400"><th className="text-left">Ticker</th><th>Date</th><th>Action</th><th>Entry</th><th>Target</th></tr></thead>
+              <thead><tr className="text-slate-400"><th className="text-left">Ticker</th><th>Broker</th><th>Conv</th><th>Flow</th><th>Recent 5</th></tr></thead>
               <tbody>
-                {recs.slice(0, 8).map((r, i) => (
-                  <tr key={`${r.ticker}-${r.date}-${i}`} className="border-t border-slate-800">
-                    <td className="py-1"><TickerLink ticker={r.ticker} /></td>
-                    <td className="text-center text-xs text-slate-400">{r.date || "-"}</td>
-                    <td className="text-center">{r.action}</td>
-                    <td className="text-center">{r.entry ?? "-"}</td>
-                    <td className="text-center">{r.target ?? "-"}</td>
-                  </tr>
-                ))}
+                {bestBrokerRows.map((row: any) => {
+                  const broker = row.dominant_factors?.broker_accumulation || {};
+                  return (
+                    <tr key={row.ticker} className="border-t border-slate-800">
+                      <td className="py-1"><TickerLink ticker={row.ticker} /></td>
+                      <td className="text-center font-mono text-xs text-slate-300">{broker.top_broker || "-"}</td>
+                      <td className="text-center font-mono text-amber-300">{fmtNum(row.broker_conviction_score)}</td>
+                      <td className="text-center">
+                        <div className="font-mono text-cyan-300">{fmtNum(row.flow_quality_score)}</div>
+                        <div className="text-[11px] text-slate-500">{row.flow_quality_label || "-"}</div>
+                      </td>
+                      <td className="text-center font-mono text-slate-300">{fmtMoney(broker.recent_5_session_net)}</td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           )}
