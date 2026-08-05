@@ -485,7 +485,23 @@ def run_screener_with_metadata(
                 + (entry_readiness["score"] * filt.entry_rank_weight),
                 2,
             )
-        dominant_factors = s.dominant_factors or {}
+        sub_scores = s.sub_scores or {}
+        trend_score = float(sub_scores.get("tech:trend_structure", 0.0) or 0.0)
+        relative_strength_score = float(sub_scores.get("tech:relative_strength", 0.0) or 0.0)
+        volume_breakout_score = float(sub_scores.get("tech:volume_breakout", 0.0) or 0.0)
+        technical_score = round(
+            (trend_score * 0.45) + (relative_strength_score * 0.30) + (volume_breakout_score * 0.25),
+            2,
+        )
+        dominant_factors = {
+            **(s.dominant_factors or {}),
+            "technical_summary": {
+                "score": technical_score,
+                "trend_structure": trend_score,
+                "relative_strength": relative_strength_score,
+                "volume_breakout": volume_breakout_score,
+            },
+        }
         if broker_accumulation:
             broker_payload = {
                 **broker_accumulation,

@@ -108,15 +108,18 @@ export default async function Dashboard({
   const technicalRows = [...screenerRows]
     .map((row: any) => {
       const subScores = row.sub_scores || {};
-      const trend = Number(subScores["tech:trend_structure"] ?? 0);
-      const relativeStrength = Number(subScores["tech:relative_strength"] ?? 0);
-      const breakout = Number(subScores["tech:volume_breakout"] ?? 0);
-      const weightedTechnical = (trend * 0.45) + (relativeStrength * 0.30) + (breakout * 0.25);
-      const technicalScore = Number.isFinite(trend + relativeStrength + breakout)
-        ? Math.round(weightedTechnical * 100) / 100
-        : 0;
+      const technical = row.dominant_factors?.technical_summary || {};
+      const trend = Number(technical.trend_structure ?? subScores["tech:trend_structure"]);
+      const relativeStrength = Number(technical.relative_strength ?? subScores["tech:relative_strength"]);
+      const breakout = Number(technical.volume_breakout ?? subScores["tech:volume_breakout"]);
+      const hasTechnicalScores = [trend, relativeStrength, breakout].every(Number.isFinite);
+      const weightedTechnical = hasTechnicalScores
+        ? (trend * 0.45) + (relativeStrength * 0.30) + (breakout * 0.25)
+        : Number(technical.score);
+      const technicalScore = Number.isFinite(weightedTechnical) ? Math.round(weightedTechnical * 100) / 100 : null;
       return { ...row, technicalScore, trend, relativeStrength, breakout };
     })
+    .filter((row: any) => row.technicalScore !== null)
     .sort((a: any, b: any) => {
       const technicalDelta = (b.technicalScore || 0) - (a.technicalScore || 0);
       if (technicalDelta !== 0) return technicalDelta;
