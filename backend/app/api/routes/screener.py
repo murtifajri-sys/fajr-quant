@@ -49,6 +49,8 @@ def run(filt: ScreenerFilter, db: Session = Depends(get_db)):
 
 @router.get("/latest", response_model=ScreenerRunOut | None)
 def latest(db: Session = Depends(get_db)):
+    from sqlalchemy import func
+    from app.models.score import Score
     from app.models.screener import ScreenerResult
 
     run_row = latest_screener_run(db, DEFAULT_SCREENER_SNAPSHOT_NAME)
@@ -63,6 +65,48 @@ def latest(db: Session = Depends(get_db)):
         .scalars()
         .all()
     )
+    result_rows = [r.as_dict() for r in results]
+    missing_technical = [
+        row["ticker"]
+        for row in result_rows
+        if not ((row.get("dominant_factors") or {}).get("technical_summary"))
+    ]
+    if missing_technical:
+        latest_scores = (
+            select(Score.ticker, func.max(Score.date).label("max_date"))
+            .where(Score.ticker.in_(missing_technical))
+            .group_by(Score.ticker)
+            .subquery()
+        )
+        scores = db.execute(
+            select(Score).join(
+                latest_scores,
+                (Score.ticker == latest_scores.c.ticker) & (Score.date == latest_scores.c.max_date),
+            )
+        ).scalars().all()
+        technical_by_ticker = {}
+        for score in scores:
+            sub_scores = score.sub_scores or {}
+            trend_score = float(sub_scores.get("tech:trend_structure", 0.0) or 0.0)
+            relative_strength_score = float(sub_scores.get("tech:relative_strength", 0.0) or 0.0)
+            volume_breakout_score = float(sub_scores.get("tech:volume_breakout", 0.0) or 0.0)
+            technical_by_ticker[score.ticker] = {
+                "score": round(
+                    (trend_score * 0.45) + (relative_strength_score * 0.30) + (volume_breakout_score * 0.25),
+                    2,
+                ),
+                "trend_structure": trend_score,
+                "relative_strength": relative_strength_score,
+                "volume_breakout": volume_breakout_score,
+            }
+        for row in result_rows:
+            technical_summary = technical_by_ticker.get(row["ticker"])
+            if not technical_summary:
+                continue
+            row["dominant_factors"] = {
+                **(row.get("dominant_factors") or {}),
+                "technical_summary": technical_summary,
+            }
     result_meta = (run_row.filter_json or {}).get("result_meta") or {}
     return ScreenerRunOut(
         run_id=run_row.id,
@@ -73,7 +117,7 @@ def latest(db: Session = Depends(get_db)):
         offset=int(result_meta.get("offset") or 0),
         has_more=bool(result_meta.get("has_more") or False),
         coverage_summary=(run_row.filter_json or {}).get("coverage_summary"),
-        results=[ScreenerResultRow(**r.as_dict()) for r in results],
+        results=[ScreenerResultRow(**row) for row in result_rows],
     )
 
 
