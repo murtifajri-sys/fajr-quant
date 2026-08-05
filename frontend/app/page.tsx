@@ -40,7 +40,11 @@ function setupClass(setupType?: string | null) {
   return "text-slate-400";
 }
 
-export default async function Dashboard() {
+export default async function Dashboard({
+  searchParams,
+}: {
+  searchParams?: { bestPage?: string | string[]; brokerPage?: string | string[]; technicalPage?: string | string[] };
+}) {
   let latest: any = null;
   let monitorRows: any[] = [];
   let runs: any[] = [];
@@ -50,7 +54,7 @@ export default async function Dashboard() {
   try {
     const [screenRes, monitorRes, runRes, watchRes] = await Promise.allSettled([
       api.get("/screener/latest"),
-      api.get("/screener/trade-monitor", { params: { limit: 10 } }),
+      api.get("/screener/trade-monitor", { params: { limit: 25 } }),
       api.get("/tasks/runs", { params: { limit: 10 } }),
       api.get("/watchlist"),
     ]);
@@ -72,9 +76,17 @@ export default async function Dashboard() {
   const bestRows = [
     ...monitorRows,
     ...topScoreRows.filter((row: any) => !monitorTickers.has(row.ticker)),
-  ].slice(0, 10);
+  ].slice(0, 25);
+  const bestPageParam = Array.isArray(searchParams?.bestPage) ? searchParams?.bestPage[0] : searchParams?.bestPage;
+  const brokerPageParam = Array.isArray(searchParams?.brokerPage) ? searchParams?.brokerPage[0] : searchParams?.brokerPage;
+  const technicalPageParam = Array.isArray(searchParams?.technicalPage) ? searchParams?.technicalPage[0] : searchParams?.technicalPage;
+  const bestPageSize = 10;
+  const bestTotalPages = Math.max(1, Math.ceil(bestRows.length / bestPageSize));
+  const bestCurrentPage = Math.min(Math.max(Number(bestPageParam) || 1, 1), bestTotalPages);
+  const bestPageStart = (bestCurrentPage - 1) * bestPageSize;
+  const bestPageRows = bestRows.slice(bestPageStart, bestPageStart + bestPageSize);
   const bestSourceText = monitorRows.length > 0 ? "Auto: broker + entry" : "Auto: top score";
-  const tradeCandidates = bestRows.map((row: any) => {
+  const tradeCandidates = bestPageRows.map((row: any) => {
     const broker = row.dominant_factors?.broker_accumulation;
     const setup = normalizeTradeSetup(row, broker);
     return { row, broker, setup };
@@ -87,7 +99,38 @@ export default async function Dashboard() {
       if (flowDelta !== 0) return flowDelta;
       return (b.composite || 0) - (a.composite || 0);
     })
-    .slice(0, 8);
+    .slice(0, 25);
+  const brokerPageSize = 10;
+  const brokerTotalPages = Math.max(1, Math.ceil(bestBrokerRows.length / brokerPageSize));
+  const brokerCurrentPage = Math.min(Math.max(Number(brokerPageParam) || 1, 1), brokerTotalPages);
+  const brokerPageStart = (brokerCurrentPage - 1) * brokerPageSize;
+  const brokerPageRows = bestBrokerRows.slice(brokerPageStart, brokerPageStart + brokerPageSize);
+  const technicalRows = [...screenerRows]
+    .map((row: any) => {
+      const subScores = row.sub_scores || {};
+      const trend = Number(subScores["tech:trend_structure"] ?? 0);
+      const relativeStrength = Number(subScores["tech:relative_strength"] ?? 0);
+      const breakout = Number(subScores["tech:volume_breakout"] ?? 0);
+      const weightedTechnical = (trend * 0.45) + (relativeStrength * 0.30) + (breakout * 0.25);
+      const technicalScore = Number.isFinite(trend + relativeStrength + breakout)
+        ? Math.round(weightedTechnical * 100) / 100
+        : 0;
+      return { ...row, technicalScore, trend, relativeStrength, breakout };
+    })
+    .sort((a: any, b: any) => {
+      const technicalDelta = (b.technicalScore || 0) - (a.technicalScore || 0);
+      if (technicalDelta !== 0) return technicalDelta;
+      return (b.composite || 0) - (a.composite || 0);
+    })
+    .slice(0, 25);
+  const technicalPageSize = 10;
+  const technicalTotalPages = Math.max(1, Math.ceil(technicalRows.length / technicalPageSize));
+  const technicalCurrentPage = Math.min(Math.max(Number(technicalPageParam) || 1, 1), technicalTotalPages);
+  const technicalPageStart = (technicalCurrentPage - 1) * technicalPageSize;
+  const technicalPageRows = technicalRows.slice(technicalPageStart, technicalPageStart + technicalPageSize);
+  const bestPageHref = (page: number) => `/?bestPage=${page}&brokerPage=${brokerCurrentPage}&technicalPage=${technicalCurrentPage}`;
+  const brokerPageHref = (page: number) => `/?bestPage=${bestCurrentPage}&brokerPage=${page}&technicalPage=${technicalCurrentPage}`;
+  const technicalPageHref = (page: number) => `/?bestPage=${bestCurrentPage}&brokerPage=${brokerCurrentPage}&technicalPage=${page}`;
   const smartLikeCount = brokerRows.filter((row: any) => row.flow_quality_label === "smart_like_accumulation").length;
 
   return (
@@ -141,7 +184,7 @@ export default async function Dashboard() {
           <div className="mb-3 flex items-center justify-between gap-3">
             <h2 className="font-semibold">Pilihan Terbaik</h2>
             <div className="flex items-center gap-3">
-              <span className="text-xs text-slate-500">{bestSourceText}</span>
+              <span className="text-xs text-slate-500">{bestSourceText} · {bestRows.length} kandidat</span>
               <a href="/ai-screener" className="text-sm text-sky-300 underline-offset-4 hover:underline">AI Screener</a>
             </div>
           </div>
@@ -183,6 +226,36 @@ export default async function Dashboard() {
               </tbody>
             </table>
           )}
+          {bestRows.length > bestPageSize && (
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-slate-800 pt-3">
+              <div className="text-xs text-slate-500">
+                Halaman {bestCurrentPage} dari {bestTotalPages} · tampil {bestPageStart + 1}-{Math.min(bestPageStart + bestPageSize, bestRows.length)}
+              </div>
+              <div className="flex items-center gap-2">
+                <a
+                  href={bestPageHref(Math.max(1, bestCurrentPage - 1))}
+                  className={`rounded border px-2.5 py-1 text-sm ${bestCurrentPage === 1 ? "pointer-events-none border-slate-800 text-slate-600" : "border-slate-700 text-sky-300 hover:border-sky-700"}`}
+                >
+                  Prev
+                </a>
+                {Array.from({ length: bestTotalPages }, (_, idx) => idx + 1).map((page) => (
+                  <a
+                    key={page}
+                    href={bestPageHref(page)}
+                    className={`rounded border px-2.5 py-1 text-sm ${page === bestCurrentPage ? "border-sky-700 bg-sky-500/10 text-sky-200" : "border-slate-700 text-slate-300 hover:border-sky-700"}`}
+                  >
+                    {page}
+                  </a>
+                ))}
+                <a
+                  href={bestPageHref(Math.min(bestTotalPages, bestCurrentPage + 1))}
+                  className={`rounded border px-2.5 py-1 text-sm ${bestCurrentPage === bestTotalPages ? "pointer-events-none border-slate-800 text-slate-600" : "border-slate-700 text-sky-300 hover:border-sky-700"}`}
+                >
+                  Next
+                </a>
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="card">
@@ -208,11 +281,11 @@ export default async function Dashboard() {
         </div>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid gap-4 lg:grid-cols-3">
         <div className="card">
           <div className="mb-3 flex items-center justify-between gap-3">
             <h2 className="font-semibold">Best Broker Summary</h2>
-            <div className="text-xs text-slate-500">{latest?.created_at ? new Date(latest.created_at).toLocaleString() : "No data"}</div>
+            <div className="text-xs text-slate-500">{bestBrokerRows.length} kandidat · {latest?.created_at ? new Date(latest.created_at).toLocaleString() : "No data"}</div>
           </div>
           {bestBrokerRows.length === 0 ? (
             <p className="text-slate-400 text-sm">Belum ada broker summary dari snapshot terbaru.</p>
@@ -220,7 +293,7 @@ export default async function Dashboard() {
             <table className="w-full text-sm">
               <thead><tr className="text-slate-400"><th className="text-left">Ticker</th><th>Broker</th><th>Conv</th><th>Flow</th><th>Recent 5</th></tr></thead>
               <tbody>
-                {bestBrokerRows.map((row: any) => {
+                {brokerPageRows.map((row: any) => {
                   const broker = row.dominant_factors?.broker_accumulation || {};
                   return (
                     <tr key={row.ticker} className="border-t border-slate-800">
@@ -237,6 +310,91 @@ export default async function Dashboard() {
                 })}
               </tbody>
             </table>
+          )}
+          {bestBrokerRows.length > brokerPageSize && (
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-slate-800 pt-3">
+              <div className="text-xs text-slate-500">
+                Halaman {brokerCurrentPage} dari {brokerTotalPages} · tampil {brokerPageStart + 1}-{Math.min(brokerPageStart + brokerPageSize, bestBrokerRows.length)}
+              </div>
+              <div className="flex items-center gap-2">
+                <a
+                  href={brokerPageHref(Math.max(1, brokerCurrentPage - 1))}
+                  className={`rounded border px-2.5 py-1 text-sm ${brokerCurrentPage === 1 ? "pointer-events-none border-slate-800 text-slate-600" : "border-slate-700 text-sky-300 hover:border-sky-700"}`}
+                >
+                  Prev
+                </a>
+                {Array.from({ length: brokerTotalPages }, (_, idx) => idx + 1).map((page) => (
+                  <a
+                    key={page}
+                    href={brokerPageHref(page)}
+                    className={`rounded border px-2.5 py-1 text-sm ${page === brokerCurrentPage ? "border-sky-700 bg-sky-500/10 text-sky-200" : "border-slate-700 text-slate-300 hover:border-sky-700"}`}
+                  >
+                    {page}
+                  </a>
+                ))}
+                <a
+                  href={brokerPageHref(Math.min(brokerTotalPages, brokerCurrentPage + 1))}
+                  className={`rounded border px-2.5 py-1 text-sm ${brokerCurrentPage === brokerTotalPages ? "pointer-events-none border-slate-800 text-slate-600" : "border-slate-700 text-sky-300 hover:border-sky-700"}`}
+                >
+                  Next
+                </a>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="card">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <h2 className="font-semibold">Teknikal Terbaik</h2>
+            <div className="text-xs text-slate-500">{technicalRows.length} kandidat</div>
+          </div>
+          {technicalRows.length === 0 ? (
+            <p className="text-slate-400 text-sm">Belum ada score teknikal dari snapshot terbaru.</p>
+          ) : (
+            <table className="w-full text-sm">
+              <thead><tr className="text-slate-400"><th className="text-left">Ticker</th><th>Tech</th><th>Trend</th><th>RS</th><th>Break</th></tr></thead>
+              <tbody>
+                {technicalPageRows.map((row: any) => (
+                  <tr key={row.ticker} className="border-t border-slate-800">
+                    <td className="py-1"><TickerLink ticker={row.ticker} /></td>
+                    <td className="text-center font-mono text-emerald-300">{fmtNum(row.technicalScore)}</td>
+                    <td className="text-center font-mono text-slate-300">{fmtNum(row.trend)}</td>
+                    <td className="text-center font-mono text-slate-300">{fmtNum(row.relativeStrength)}</td>
+                    <td className="text-center font-mono text-slate-300">{fmtNum(row.breakout)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+          {technicalRows.length > technicalPageSize && (
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-slate-800 pt-3">
+              <div className="text-xs text-slate-500">
+                Halaman {technicalCurrentPage} dari {technicalTotalPages} · tampil {technicalPageStart + 1}-{Math.min(technicalPageStart + technicalPageSize, technicalRows.length)}
+              </div>
+              <div className="flex items-center gap-2">
+                <a
+                  href={technicalPageHref(Math.max(1, technicalCurrentPage - 1))}
+                  className={`rounded border px-2.5 py-1 text-sm ${technicalCurrentPage === 1 ? "pointer-events-none border-slate-800 text-slate-600" : "border-slate-700 text-sky-300 hover:border-sky-700"}`}
+                >
+                  Prev
+                </a>
+                {Array.from({ length: technicalTotalPages }, (_, idx) => idx + 1).map((page) => (
+                  <a
+                    key={page}
+                    href={technicalPageHref(page)}
+                    className={`rounded border px-2.5 py-1 text-sm ${page === technicalCurrentPage ? "border-sky-700 bg-sky-500/10 text-sky-200" : "border-slate-700 text-slate-300 hover:border-sky-700"}`}
+                  >
+                    {page}
+                  </a>
+                ))}
+                <a
+                  href={technicalPageHref(Math.min(technicalTotalPages, technicalCurrentPage + 1))}
+                  className={`rounded border px-2.5 py-1 text-sm ${technicalCurrentPage === technicalTotalPages ? "pointer-events-none border-slate-800 text-slate-600" : "border-slate-700 text-sky-300 hover:border-sky-700"}`}
+                >
+                  Next
+                </a>
+              </div>
+            </div>
           )}
         </div>
 
